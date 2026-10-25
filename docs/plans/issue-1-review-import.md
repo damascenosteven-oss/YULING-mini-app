@@ -73,4 +73,50 @@ PR 面向本仓库 main，正文使用 Closes #1，只关联本仓库迁入任�
 
 ## 本次验证记录
 
-待执行。此状态不构成任何测试、远端 CI 或 Mac 验收通过声明。
+我跑过：2026-10-26 原生 Windows x64，应用准确测试提交
+`5dba71944e4d167247d3de9f9d62d444c5131ade`，配对引擎
+`be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192`；运行前和候选采集后两仓均干净。
+工具为上述固定版本，Python 实测 3.12.10。此处追加报告是后续文档变更，不能冒充另一次代码测试。
+
+| 实际命令 | 实际结果 | 退出码 |
+| --- | --- | --- |
+| `pnpm install --frozen-lockfile` | 冻结安装，依赖锁未变 | 0 |
+| `pnpm audit --json` | 526 个依赖，全部风险级别 0 | 0 |
+| `pnpm audit --prod --json` | 167 个依赖，全部风险级别 0 | 0 |
+| `pnpm validate` | TypeScript 和 ESLint 通过 | 0 |
+| `pnpm test:portable` | 15 个脚本测试 + 38 个单元测试，0 失败、0 跳过 | 0 |
+| `pnpm test:ppt` | 46 个通过，0 失败、0 跳过 | 0 |
+| `pnpm test:ppt:golden:geometry` | 12 页通过 | 0 |
+| `pnpm exec tsx scripts/ppt-golden.ts candidate --output <fresh-external-directory>` | 两次独立浏览器捕获，各 12 页，零像素差异 | 0 |
+| `pnpm build` | Next.js 构建及 server/cleanup 两个 CJS 产物成功 | 0 |
+
+跨仓库套件包含真实 Python 引擎构建、包装器失败传播及浏览器溢出检查；portable 包含
+真实候选命令的输出目录保护失败传播。候选报告标记 approved: false，所有 12 页两次捕获的
+PNG 字节、SHA256 和几何记录逐页一致，环境为 win32/x64、1920×1080、
+Chrome 152.0.7977.64、Playwright 1.64.0。未采用任何候选为新基线。
+
+外部记录器在写完 build 的退出码和日志哈希后，打印日志尾部时发生 GBK
+UnicodeEncodeError，记录器进程最终退出 1；该异常保留，不记作通过。
+实际 pnpm build 子命令退出 0。随后使用 UTF-8 只读核对全部 9 份命令回执、日志哈希、
+完整构建尾部和两个产物均一致，未覆盖日志、未更改产品或为掩盖异常重复运行测试。
+
+| 本地证据（原件留在仓库外） | SHA256 |
+| --- | --- |
+| install.log | `3f433c59c4566ba0acced6e516d25dfcc7127cc07b6346a58c196e6d9da206da` |
+| audit-full.log | `6cadcf2e93ca634e41afe74f167d3a4f653bef848f631edcb2b577d84b5870b9` |
+| audit-production.log | `36872159045ec6e4454410c8f52e9219e00a49a67cc78a3a520e3a3744ac15bf` |
+| validate.log | `efb0c0aac6e4df6f06616db79e5182a8ceb270c36fee7db01c45f737528eb066` |
+| portable.log | `d9130b4a2dc58837fa2e9df4fd6557f3459aadc52863a09d9bca7516cb2b280f` |
+| integration.log | `cf59681e75be83043f336dd0d399bd62572ccaafef21989aa3314830e8a59551` |
+| geometry.log | `1705c6ee96403b76d36aca2617ee08252107d818879bf40b98ac96352d519ebd` |
+| candidate.log | `2ee3e3625564ce20e8d3e76ad2ed1ba687a5b3438fc3d2ad3081f9faf68847bb` |
+| windows-candidate-1/candidate.json | `a17158d050a634e84ed00fe5ebd785091ad7dd4f1d82691c1e647e7a07aee758` |
+| build.log | `b70e7a24dc9ebbc5b7c564ddcad5c802591f84a2f8abf708bc4cd0ef5a877913` |
+
+我跑过：源候选的 14 个历史提交敏感信息扫描退出 0，无发现；相对源候选的全部文件差异
+仅为 CONTRIBUTING、本计划和问答记录三项。最终报告提交后的完整历史扫描及远端 CI
+结果记录在本次审核 PR，不能引用其他 PR 的成功状态。初始化 main 后继承的 Dependabot
+配置自动创建了独立依赖更新 PR；已确认 main 仍是批准基线，本次不修改或合并这些 PR。
+
+未执行：原生 Mac、WSL2、服务部署、正式 Mac 基线验收；本次也未重跑未列出的完整引擎套件
+或正式 Windows Golden 像素基线比较。Windows 候选重复性不代表 Mac 批准。
