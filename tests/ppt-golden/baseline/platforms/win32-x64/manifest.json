@@ -1,0 +1,1460 @@
+{
+  "schemaVersion": 1,
+  "templateVersion": 1,
+  "createdAt": "2026-10-20T14:06:30.905Z",
+  "platform": "win32",
+  "architecture": "x64",
+  "chromeVersion": "152.0.7977.64",
+  "playwrightVersion": "1.64.0",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "pageCount": 12,
+  "pages": [
+    {
+      "page": 1,
+      "file": "page-01.png",
+      "sha256": "61f6c0538856d7a1b177a446f4b56ad3bd54eed14e3b91717c868a846a932698",
+      "geometry": {
+        "page": 1,
+        "title": "让每一次汇报都可审核",
+        "activeCount": 1,
+        "content": {
+          "header": null,
+          "body": null,
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 460,
+            "height": 40,
+            "top": 1008.5,
+            "right": 516,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 120,
+              "y": 323,
+              "width": 1680,
+              "height": 35,
+              "top": 323,
+              "right": 1800,
+              "bottom": 358,
+              "left": 120
+            }
+          },
+          {
+            "tag": "p",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 120,
+              "y": 555.59,
+              "width": 1180,
+              "height": 46.39,
+              "top": 555.59,
+              "right": 1300,
+              "bottom": 601.98,
+              "left": 120
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 120,
+              "y": 651.98,
+              "width": 1680,
+              "height": 51,
+              "top": 651.98,
+              "right": 1800,
+              "bottom": 702.98,
+              "left": 120
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 2,
+      "file": "page-02.png",
+      "sha256": "0d0fb5480fa841d2de241c0c853a046ccf056699ab9b7b588ff01eef12b68ffe",
+      "geometry": {
+        "page": 2,
+        "title": "三层信息，先结论再证据",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 98.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 156.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 156.47,
+            "width": 1696,
+            "height": 791.53,
+            "top": 156.47,
+            "right": 1808,
+            "bottom": 948,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 465.42,
+            "height": 40,
+            "top": 1008.5,
+            "right": 521.42,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [
+          {
+            "color": "rgb(48, 176, 199)",
+            "fill": "rgb(48, 176, 199)",
+            "animation": "none",
+            "opacity": 1
+          }
+        ],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 362.83,
+              "width": 546.66,
+              "height": 330,
+              "top": 362.83,
+              "right": 658.66,
+              "bottom": 692.83,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 686.66,
+              "y": 362.83,
+              "width": 546.67,
+              "height": 330,
+              "top": 362.83,
+              "right": 1233.33,
+              "bottom": 692.83,
+              "left": 686.66
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 1261.33,
+              "y": 362.83,
+              "width": 546.67,
+              "height": 330,
+              "top": 362.83,
+              "right": 1808,
+              "bottom": 692.83,
+              "left": 1261.33
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 3,
+      "file": "page-03.png",
+      "sha256": "5b0c953137080d7d6e71894d659d4306036885ec607d334ec6b306e2b2e9c7be",
+      "geometry": {
+        "page": 3,
+        "title": "四步闭环：从定框架到发 HTML",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 145.27,
+            "top": 58,
+            "right": 1808,
+            "bottom": 203.27,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 203.27,
+            "width": 1696,
+            "height": 744.73,
+            "top": 203.27,
+            "right": 1808,
+            "bottom": 948,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 534.34,
+            "height": 40,
+            "top": 1008.5,
+            "right": 590.34,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [
+          {
+            "color": "rgb(175, 82, 222)",
+            "fill": "rgb(175, 82, 222)",
+            "animation": "none",
+            "opacity": 1
+          }
+        ],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "stamp",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "p",
+            "entrance": "stamp",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 168.47,
+              "width": 1320,
+              "height": 34.8,
+              "top": 168.47,
+              "right": 1432,
+              "bottom": 203.27,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "stamp",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 443.94,
+              "width": 834,
+              "height": 99.3,
+              "top": 443.94,
+              "right": 946,
+              "bottom": 543.23,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "stamp",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 974,
+              "y": 443.94,
+              "width": 834,
+              "height": 99.3,
+              "top": 443.94,
+              "right": 1808,
+              "bottom": 543.23,
+              "left": 974
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "stamp",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 559.23,
+              "width": 834,
+              "height": 99.3,
+              "top": 559.23,
+              "right": 946,
+              "bottom": 658.53,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "stamp",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 974,
+              "y": 559.23,
+              "width": 834,
+              "height": 99.3,
+              "top": 559.23,
+              "right": 1808,
+              "bottom": 658.53,
+              "left": 974
+            }
+          }
+        ],
+        "roadmap": [
+          {
+            "x": 112,
+            "y": 443.94,
+            "width": 834,
+            "height": 99.3,
+            "top": 443.94,
+            "right": 946,
+            "bottom": 543.23,
+            "left": 112
+          },
+          {
+            "x": 974,
+            "y": 443.94,
+            "width": 834,
+            "height": 99.3,
+            "top": 443.94,
+            "right": 1808,
+            "bottom": 543.23,
+            "left": 974
+          },
+          {
+            "x": 112,
+            "y": 559.23,
+            "width": 834,
+            "height": 99.3,
+            "top": 559.23,
+            "right": 946,
+            "bottom": 658.53,
+            "left": 112
+          },
+          {
+            "x": 974,
+            "y": 559.23,
+            "width": 834,
+            "height": 99.3,
+            "top": 559.23,
+            "right": 1808,
+            "bottom": 658.53,
+            "left": 974
+          }
+        ]
+      }
+    },
+    {
+      "page": 4,
+      "file": "page-04.png",
+      "sha256": "6e07682904027a9a40823ffcbd01e5c9ddc5d71e777191a40fa2541cfe55fba6",
+      "geometry": {
+        "page": 4,
+        "title": "从文件交付转向决策交付",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 98.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 156.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 156.47,
+            "width": 1696,
+            "height": 791.53,
+            "top": 156.47,
+            "right": 1808,
+            "bottom": 948,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 465.42,
+            "height": 40,
+            "top": 1008.5,
+            "right": 521.42,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [
+          {
+            "color": "rgb(255, 45, 85)",
+            "fill": "rgb(255, 45, 85)",
+            "animation": "none",
+            "opacity": 1
+          }
+        ],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "stamp",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "left",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 401.23,
+              "width": 834,
+              "height": 330,
+              "top": 401.23,
+              "right": 946,
+              "bottom": 731.23,
+              "left": 112
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "right",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 974,
+              "y": 401.23,
+              "width": 834,
+              "height": 330,
+              "top": 401.23,
+              "right": 1808,
+              "bottom": 731.23,
+              "left": 974
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 5,
+      "file": "page-05.png",
+      "sha256": "5679648e07803a5652f9ed9192cb986bbace38bcf62ebafbe2e2a9c4f4a22aa9",
+      "geometry": {
+        "page": 5,
+        "title": "管理汇报的证据结构",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 98.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 156.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 156.47,
+            "width": 1696,
+            "height": 791.53,
+            "top": 156.47,
+            "right": 1808,
+            "bottom": 948,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 460,
+            "height": 40,
+            "top": 1008.5,
+            "right": 516,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [
+          {
+            "color": "rgb(0, 113, 227)",
+            "fill": "rgb(0, 113, 227)",
+            "animation": "none",
+            "opacity": 1
+          }
+        ],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 235,
+              "y": 430.73,
+              "width": 1450,
+              "height": 72,
+              "top": 430.73,
+              "right": 1685,
+              "bottom": 502.73,
+              "left": 235
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 235,
+              "y": 516.73,
+              "width": 1450,
+              "height": 72,
+              "top": 516.73,
+              "right": 1685,
+              "bottom": 588.73,
+              "left": 235
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 235,
+              "y": 602.73,
+              "width": 1450,
+              "height": 72,
+              "top": 602.73,
+              "right": 1685,
+              "bottom": 674.73,
+              "left": 235
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 235,
+              "y": 688.73,
+              "width": 1450,
+              "height": 72,
+              "top": 688.73,
+              "right": 1685,
+              "bottom": 760.73,
+              "left": 235
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 6,
+      "file": "page-06.png",
+      "sha256": "43b9ba242c5a334c40761266e8c3ecb01a256186bd90cd8e72ff5a4c38ac213b",
+      "geometry": {
+        "page": 6,
+        "title": "好汇报是业务与证据的交集",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 98.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 156.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 156.47,
+            "width": 1696,
+            "height": 791.53,
+            "top": 156.47,
+            "right": 1808,
+            "bottom": 948,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 487.42,
+            "height": 40,
+            "top": 1008.5,
+            "right": 543.42,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [
+          {
+            "color": "rgb(48, 176, 199)",
+            "fill": "rgb(48, 176, 199)",
+            "animation": "none",
+            "opacity": 1
+          }
+        ],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "zoom",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 7,
+      "file": "page-07.png",
+      "sha256": "3ae4c452d52a20a92a36fe9e2577a0d713a3e79a9a54dac63e0f7acf54c15d65",
+      "geometry": {
+        "page": 7,
+        "title": "关键指标形成清晰主次",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 123.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 181.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 181.47,
+            "width": 1696,
+            "height": 749.53,
+            "top": 181.47,
+            "right": 1808,
+            "bottom": 931,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 460,
+            "height": 40,
+            "top": 1008.5,
+            "right": 516,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 199.47,
+              "width": 615.97,
+              "height": 678.53,
+              "top": 199.47,
+              "right": 727.97,
+              "bottom": 878,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 745.97,
+              "y": 209.47,
+              "width": 522.02,
+              "height": 678.53,
+              "top": 209.47,
+              "right": 1267.98,
+              "bottom": 888,
+              "left": 745.97
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 1285.98,
+              "y": 209.47,
+              "width": 522.02,
+              "height": 678.53,
+              "top": 209.47,
+              "right": 1808,
+              "bottom": 888,
+              "left": 1285.98
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 8,
+      "file": "page-08.png",
+      "sha256": "2c5a03f0fe52237a3f456147c7f941bec91f91c88ec1478ecc40ebaeaf0b739f",
+      "geometry": {
+        "page": 8,
+        "title": "五类能力呈现差异化表现",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 123.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 181.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 181.47,
+            "width": 1696,
+            "height": 749.53,
+            "top": 181.47,
+            "right": 1808,
+            "bottom": 931,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 465.42,
+            "height": 40,
+            "top": 1008.5,
+            "right": 521.42,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "zoom",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "aside",
+            "entrance": "right",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 1478,
+              "y": 209.47,
+              "width": 330,
+              "height": 430,
+              "top": 209.47,
+              "right": 1808,
+              "bottom": 639.47,
+              "left": 1478
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 9,
+      "file": "page-09.png",
+      "sha256": "e8e8f3884556412c01798ee0ac32a89b00dd492e9819dc5eb1fce87f94a2cc88",
+      "geometry": {
+        "page": 9,
+        "title": "时间投入转向高价值判断",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 123.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 181.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 181.47,
+            "width": 1696,
+            "height": 749.53,
+            "top": 181.47,
+            "right": 1808,
+            "bottom": 931,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 465.42,
+            "height": 40,
+            "top": 1008.5,
+            "right": 521.42,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "aside",
+            "entrance": "right",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 1222.8,
+              "y": 209.47,
+              "width": 585.19,
+              "height": 430,
+              "top": 209.47,
+              "right": 1807.98,
+              "bottom": 639.47,
+              "left": 1222.8
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 10,
+      "file": "page-10.png",
+      "sha256": "31de1c1587f948e15740dc3974265807b956912f8eaca2658ccb2aa24b45e4a4",
+      "geometry": {
+        "page": 10,
+        "title": "区域表现一眼识别领先项",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 123.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 181.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 181.47,
+            "width": 1696,
+            "height": 749.53,
+            "top": 181.47,
+            "right": 1808,
+            "bottom": 931,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 465.42,
+            "height": 40,
+            "top": 1008.5,
+            "right": 521.42,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "zoom",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "zoom",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 209.47,
+              "width": 350,
+              "height": 135.33,
+              "top": 209.47,
+              "right": 462,
+              "bottom": 344.8,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "zoom",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 356.8,
+              "width": 350,
+              "height": 135.33,
+              "top": 356.8,
+              "right": 462,
+              "bottom": 492.13,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "zoom",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 504.13,
+              "width": 350,
+              "height": 135.34,
+              "top": 504.13,
+              "right": 462,
+              "bottom": 639.47,
+              "left": 112
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 11,
+      "file": "page-11.png",
+      "sha256": "aef14063b3e6424190936dfe3387fda43c470a08ba246b843e191772913291bd",
+      "geometry": {
+        "page": 11,
+        "title": "投入产出需要可复核计算",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 58,
+            "width": 1696,
+            "height": 123.47,
+            "top": 58,
+            "right": 1808,
+            "bottom": 181.47,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 181.47,
+            "width": 1696,
+            "height": 749.53,
+            "top": 181.47,
+            "right": 1808,
+            "bottom": 931,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 465.42,
+            "height": 40,
+            "top": 1008.5,
+            "right": 521.42,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 58,
+              "width": 1696,
+              "height": 26,
+              "top": 58,
+              "right": 1808,
+              "bottom": 84,
+              "left": 112
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "left",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 209.47,
+              "width": 601.91,
+              "height": 430,
+              "top": 209.47,
+              "right": 713.91,
+              "bottom": 639.47,
+              "left": 112
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 144,
+              "y": 526.47,
+              "width": 260.95,
+              "height": 81,
+              "top": 526.47,
+              "right": 404.95,
+              "bottom": 607.47,
+              "left": 144
+            }
+          },
+          {
+            "tag": "article",
+            "entrance": "rise",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 420.95,
+              "y": 526.47,
+              "width": 260.95,
+              "height": 81,
+              "top": 526.47,
+              "right": 681.91,
+              "bottom": 607.47,
+              "left": 420.95
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    },
+    {
+      "page": 12,
+      "file": "page-12.png",
+      "sha256": "fbabe7973febcb5a0a90b127c812db23b01989aaeded0e6f349c39d1de72ce80",
+      "geometry": {
+        "page": 12,
+        "title": "先把思想讲清，再把证据做实",
+        "activeCount": 1,
+        "content": {
+          "header": {
+            "x": 112,
+            "y": 74,
+            "width": 1696,
+            "height": 102.95,
+            "top": 74,
+            "right": 1808,
+            "bottom": 176.95,
+            "left": 112
+          },
+          "body": {
+            "x": 112,
+            "y": 176.95,
+            "width": 1696,
+            "height": 771.05,
+            "top": 176.95,
+            "right": 1808,
+            "bottom": 948,
+            "left": 112
+          },
+          "nav": {
+            "x": 0,
+            "y": 976,
+            "width": 1920,
+            "height": 104,
+            "top": 976,
+            "right": 1920,
+            "bottom": 1080,
+            "left": 0
+          },
+          "brand": {
+            "x": 56,
+            "y": 1008.5,
+            "width": 509.42,
+            "height": 40,
+            "top": 1008.5,
+            "right": 565.42,
+            "bottom": 1048.5,
+            "left": 56
+          }
+        },
+        "emphasis": [],
+        "animated": [
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 74,
+              "width": 1696,
+              "height": 26,
+              "top": 74,
+              "right": 1808,
+              "bottom": 100,
+              "left": 112
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 112,
+              "y": 397.47,
+              "width": 808,
+              "height": 360,
+              "top": 397.47,
+              "right": 920,
+              "bottom": 757.47,
+              "left": 112
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 1000,
+              "y": 456.08,
+              "width": 808,
+              "height": 71.59,
+              "top": 456.08,
+              "right": 1808,
+              "bottom": 527.67,
+              "left": 1000
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 1000,
+              "y": 541.67,
+              "width": 808,
+              "height": 71.59,
+              "top": 541.67,
+              "right": 1808,
+              "bottom": 613.27,
+              "left": 1000
+            }
+          },
+          {
+            "tag": "div",
+            "entrance": "blur",
+            "transform": "matrix(1, 0, 0, 1, 0, 0)",
+            "opacity": 1,
+            "rect": {
+              "x": 1000,
+              "y": 627.27,
+              "width": 808,
+              "height": 71.59,
+              "top": 627.27,
+              "right": 1808,
+              "bottom": 698.86,
+              "left": 1000
+            }
+          }
+        ],
+        "roadmap": []
+      }
+    }
+  ],
+  "environment": {
+    "platform": "win32",
+    "architecture": "x64",
+    "chromeVersion": "152.0.7977.64",
+    "playwrightVersion": "1.64.0",
+    "browserSha256": "79832d1e60cbad9323c07339f9608bc0ce93cb9242b9b5481c04a0c536720980",
+    "fontInventorySha256": "18e393e867896c06726b5cfe773c6b49c491970d81e0b9839c3292ac1ee23539",
+    "browserArgs": [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--font-render-hinting=none",
+      "--disable-gpu"
+    ],
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    }
+  },
+  "approval": {
+    "approvedAt": "2026-10-20",
+    "authority": "Explicit owner approval of the three Public visual targets and implementation plan in this task",
+    "engineSource": "f2c33fe124e864114020d15b66749025c8bb0046",
+    "appSource": "d7508f77ed044ccc3ab9da40bf5a79076c33129e",
+    "candidateReviewIndexSha256": "d9fc02767e8bc2ce47c540508ca9ce1aaaa240000d7d327f6585a97706e112b2",
+    "kind": "approved-windows-software-target"
+  }
+}

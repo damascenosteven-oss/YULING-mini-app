@@ -3,10 +3,18 @@ import { createServer } from 'node:net';
 import test from 'node:test';
 import { commandForPlatform, isPortAvailable, runChild } from './task-runner-lib.mjs';
 
-test('platform command adds the Windows cmd suffix only where required', () => {
-  assert.equal(commandForPlatform('pnpm', 'win32'), 'pnpm.cmd');
-  assert.equal(commandForPlatform('node', 'win32'), 'node');
-  assert.equal(commandForPlatform('pnpm', 'darwin'), 'pnpm');
+test('Windows pnpm uses its Node entrypoint without shell parsing', () => {
+  const entrypoint = 'C:\\Tools with spaces\\pnpm.cjs';
+  const args = ['exec', 'tool', 'value & literal'];
+  assert.deepEqual(commandForPlatform('pnpm', args, { npm_execpath: entrypoint }, 'win32'),
+    [process.execPath, [entrypoint, ...args]]);
+  assert.deepEqual(commandForPlatform('node', args, {}, 'win32'), ['node', args]);
+  assert.deepEqual(commandForPlatform('pnpm', args, {}, 'darwin'), ['pnpm', args]);
+  assert.throws(() => commandForPlatform('pnpm', args, {}, 'win32'), /Run this task through pnpm/);
+});
+
+test('task runner starts the real pnpm CLI', async () => {
+  assert.equal(await runChild('pnpm', ['--version'], { stdio: 'ignore' }), 0);
 });
 
 test('port check detects an occupied port without terminating its owner', async () => {

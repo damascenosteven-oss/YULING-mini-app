@@ -313,10 +313,10 @@ baseline. The upstream license text and copyright notices remain authoritative.
 | `pirates` | 4.0.7 | MIT | [link](https://github.com/danez/pirates#readme) |
 | `pixelmatch` | 8.0.0 | ISC | [link](https://github.com/mapbox/pixelmatch#readme) |
 | `pkg-types` | 1.3.1 | MIT | [link](https://github.com/unjs/pkg-types#readme) |
-| `playwright-core` | 1.64.1 | Apache-2.0 | [link](https://playwright.dev) |
+| `playwright-core` | 1.64.0 | Apache-2.0 | [link](https://playwright.dev) |
 | `pngjs` | 7.0.0 | MIT | [link](https://github.com/lukeapage/pngjs) |
 | `possible-typed-array-names` | 1.1.0 | MIT | [link](https://github.com/ljharb/possible-typed-array-names#readme) |
-| `postcss` | 8.5.23, 8.5.31 | MIT | [link](https://postcss.org/) |
+| `postcss` | 8.5.31 | MIT | [link](https://postcss.org/) |
 | `postcss-load-config` | 6.0.1 | MIT | [link](https://github.com/postcss/postcss-load-config#readme) |
 | `prelude-ls` | 1.2.1 | MIT | [link](http://preludels.com) |
 | `punycode` | 2.3.1 | MIT | [link](https://mths.be/punycode) |

@@ -26,6 +26,11 @@ account exports or customer material.
 
 ## Checks
 
+Issue #1's candidate pair and native Mac owner procedure are documented in
+[MAC_ACCEPTANCE.md](MAC_ACCEPTANCE.md) and
+[BASELINE_REPRODUCTION.md](BASELINE_REPRODUCTION.md). Mac pixel acceptance still
+requires separately reviewed native candidates.
+
 ```bash
 pnpm validate
 pnpm test:portable

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createDeviceToken, createSessionToken, deviceOwnerHash, verifyDeviceToken, verifyInvitePassword, verifySessionToken } from './auth';
 import { buildDeckHtml } from './builder';
 import { DeckQaError, qualityCheckDeck } from './qa';
@@ -24,6 +28,25 @@ function availableEngine(): string | undefined {
 function availableBrowser(): string | undefined {
   return browserCandidates().find(candidate => existsSync(candidate));
 }
+
+test('browser QA geometry command runs without any pixel baseline directory', async context => {
+  if (!availableEngine() || !availableBrowser()) { context.skip('Requires real Python engine and browser'); return; }
+  const root = process.cwd();
+  const directory = await mkdtemp(path.join(tmpdir(), 'yuling-geometry-no-baseline-'));
+  try {
+    await mkdir(path.join(directory, 'public'));
+    await copyFile(path.join(root, 'public/yuling-logo.png'), path.join(directory, 'public/yuling-logo.png'));
+    const result = await promisify(execFile)(process.execPath,
+      [path.join(root, 'node_modules/tsx/dist/cli.mjs'), path.join(root, 'scripts/ppt-golden.ts'), 'geometry'],
+      { cwd: directory, env: { ...process.env, PPT_ENGINE_ROOT: availableEngine() }, timeout: 240_000 });
+    assert.match(result.stdout, /PPT golden geometry passed: 12 pages/);
+    assert.equal(existsSync(path.join(directory, 'tests/ppt-golden/baseline')), false);
+  } finally {
+    assert.equal(path.dirname(directory), tmpdir());
+    assert.ok(path.basename(directory).startsWith('yuling-geometry-no-baseline-'));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 const outline: DeckOutline = {
   title: '安全的 AI 汇报',
@@ -612,6 +635,25 @@ test('real Python engine builds a single-file HTML deck', async context => {
   assert.match(text, /<span>毓灵 YuLing AI<\/span>/);
   assert.equal((text.match(/<section class="slide/g) || []).length, 7);
   assert.equal((text.match(/AI 辅助生成，请核对/g) || []).length, 7);
+});
+
+test('real Python engine failure is propagated by the builder', async context => {
+  const engine = availableEngine();
+  if (!engine) return context.skip('local engine is unavailable');
+  const originalRoot = process.env.PPT_ENGINE_ROOT;
+  const directory = await mkdtemp(path.join(tmpdir(), 'yuling-builder-failure-'));
+  try {
+    await mkdir(path.join(directory, 'tools'));
+    await copyFile(path.join(engine, 'tools/build_deck.py'), path.join(directory, 'tools/build_deck.py'));
+    process.env.PPT_ENGINE_ROOT = directory;
+    await assert.rejects(() => buildDeckHtml(outline), /PPT builder failed \(1\):/);
+  } finally {
+    if (originalRoot === undefined) delete process.env.PPT_ENGINE_ROOT;
+    else process.env.PPT_ENGINE_ROOT = originalRoot;
+    assert.equal(path.dirname(path.resolve(directory)), path.resolve(tmpdir()));
+    assert.ok(path.basename(directory).startsWith('yuling-builder-failure-'));
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('browser QA checks every page and rapid navigation', async context => {
