@@ -250,4 +250,3 @@ if __name__ == "__main__":
         print(str(error) if isinstance(error, RuntimeError) else "Setup failed; inspect host state before retry.",
               file=sys.stderr)
         sys.exit(1)
-

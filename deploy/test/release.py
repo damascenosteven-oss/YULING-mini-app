@@ -524,5 +524,3 @@ if __name__ == "__main__":
         print(json.dumps({"status": "failed", "error": str(error) if isinstance(error, ReleaseError)
                           else "Invalid host state; owner inspection required"}), file=sys.stderr)
         sys.exit(1)
-
-
