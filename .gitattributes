@@ -1,0 +1,2 @@
+# Preserve the reviewed checker bytes across Windows and Linux checkouts.
+.engineering-guard/* text eol=lf

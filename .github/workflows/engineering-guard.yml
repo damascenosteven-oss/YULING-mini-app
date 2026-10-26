@@ -1,0 +1,24 @@
+name: engineering-guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  engineering-guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify Python runtime
+        run: python3 -c "import sys; assert sys.version_info[:2] == (3, 12)"
+      - name: Exercise installed hooks and CI rejection paths
+        run: python3 .engineering-guard/test_guard.py -v
+      - name: Check actual PR source and Issue closure
+        run: python3 .engineering-guard/engineering_guard.py ci --policy .engineering-guard/policy.json --file "$GITHUB_EVENT_PATH"

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "checker_version": "1.0.0",
+  "checker_sha256": "502ebbbac181494153662d7b08056f8a303a7039af80e18106c1f214c42f5a29",
+  "project": "damascenosteven-oss/YULING-mini-app",
+  "ci_entry": ".github/workflows/engineering-guard.yml",
+  "classes": {},
+  "lifecycle": {
+    "required": true,
+    "effective_at": "2026-10-22T04:50:03.733426+00:00",
+    "grandfathered": {},
+    "issues": {
+      "9": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/9",
+        "approval_source": "Owner explicitly requested implementation of the accepted standalone engineering-guard plan in this Codex conversation on 2026-10-26; no merge or deployment authority.",
+        "plan": "docs/plans/issue-9-engineering-guard.md",
+        "plan_sha256": "53aa1b669e12bdbba341eda76db7280427e04af4216ba288f6fe2a38da5e2577",
+        "adr": "docs/adr/0003-engineering-guard.md",
+        "adr_sha256": "bb59bc220439e93df29d8be6f1e755d3241e7331e25dd7fb12289b4781e99271"
+      }
+    }
+  }
+}
