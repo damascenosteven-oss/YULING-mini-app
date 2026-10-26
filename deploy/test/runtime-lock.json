@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "base_image": "python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f",
+  "python": "3.12.14",
+  "node": "22.23.3",
+  "pnpm": "9.0.0",
+  "chrome": "152.0.7977.64",
+  "pillow": "13.0.0",
+  "playwright": "1.64.0",
+  "engine_sha": "be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192",
+  "fonts": {
+    "fonts-noto-cjk": "1:20240730+repack1-1",
+    "fonts-liberation": "1:2.1.5-3"
+  },
+  "downloads": {
+    "node.tar.xz": {
+      "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.xz",
+      "sha256": "df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de"
+    },
+    "chrome.zip": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/152.0.7977.64/linux64/chrome-linux64.zip",
+      "sha256": "8b592f066af71f054aab2cc80fc26f73c775c6d44ebb99d16ade924b24756c2e"
+    },
+    "pnpm.tgz": {
+      "url": "https://registry.npmjs.org/pnpm/-/pnpm-9.0.0.tgz",
+      "sha256": "bdfc9a7b372b5c462176993e586492603e20da5864d2f8881edc2462482c76fa"
+    }
+  }
+}

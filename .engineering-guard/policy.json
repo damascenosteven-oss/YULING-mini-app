@@ -17,6 +17,14 @@
         "plan_sha256": "53aa1b669e12bdbba341eda76db7280427e04af4216ba288f6fe2a38da5e2577",
         "adr": "docs/adr/0003-engineering-guard.md",
         "adr_sha256": "bb59bc220439e93df29d8be6f1e755d3241e7331e25dd7fb12289b4781e99271"
+      },
+      "8": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/8",
+        "approval_source": "Owner approved mobile test deployment preparation on 2026-10-26, then explicitly approved this Issue 8 resume plan on 2026-10-27. Authority: code, tests, local enrollment, Issue branch push and PR; no merge or server deployment.",
+        "plan": "docs/plans/issue-8-mobile-test-release.md",
+        "adr": "docs/adr/0004-mobile-test-release.md",
+        "plan_sha256": "24a637122da996e4fb99be2d69a6d4ed8eb0cfc18d60e384b88203c89ef0a496",
+        "adr_sha256": "0f1c5b9392cc88200849f61364c6423994d34ed6fee280b27dc1865fed175f73"
       }
     }
   }

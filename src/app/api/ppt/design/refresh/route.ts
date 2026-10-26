@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   if (device.cookieValue) response.cookies.set(DEVICE_COOKIE, device.cookieValue, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: DEVICE_MAX_AGE_SECONDS,
   });

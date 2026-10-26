@@ -111,3 +111,11 @@ test('real candidate command propagates output protection failure', () => tempor
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Candidate output already exists/);
 }));
+
+test('packaged verifier can import the exact Golden checks without running the CLI', () => temporary(directory => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const expression = `const golden = require(${JSON.stringify(path.join(root, 'scripts/ppt-golden.ts'))}); if (typeof golden.captureAll !== 'function' || typeof golden.strictDiff !== 'function') process.exitCode = 2;`;
+  const result = spawnSync(process.execPath, [path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+    '-e', expression], { cwd: directory, encoding: 'utf8', timeout: 20000 });
+  assert.equal(result.status, 0, result.stderr);
+}));

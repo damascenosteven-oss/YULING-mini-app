@@ -1,0 +1,16 @@
+.git
+node_modules
+.next
+dist
+build
+docs
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+deploy/Caddyfile

@@ -1,0 +1,81 @@
+name: PPT test site — publish or rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'publish：发布测试站；rollback：回滚上一成功版'
+        required: true
+        type: choice
+        options: [publish, rollback]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ppt-test-server
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'publish'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - run: python3 -m unittest discover -s deploy/test -p '*_test.py' -v
+      - name: Verify restricted receiver and rollback before publishing
+        run: python3 deploy/test/receiver-integration.py --output "$RUNNER_TEMP/receiver-entry"
+      - name: Build pinned image and export verified source manifest
+        run: python3 deploy/test/build-image.py --output "$RUNNER_TEMP/release"
+      - name: Test final image, static assets, Python and two independent captures
+        run: python3 deploy/test/verify-image.py --build-output "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ppt-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release/bundle.tar
+            ${{ runner.temp }}/release/bundle.sha256
+            ${{ runner.temp }}/release/release.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ppt-image-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release/packaged-candidate
+            ${{ runner.temp }}/release/image-memory.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+  release:
+    needs: build
+    if: >-
+      always() && !cancelled() && github.ref == 'refs/heads/main' &&
+      ((inputs.operation == 'publish' && needs.build.result == 'success') ||
+       (inputs.operation == 'rollback' && needs.build.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: ppt-test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        if: inputs.operation == 'publish'
+        with:
+          name: ppt-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release
+      - name: Restricted server operation
+        env:
+          OPERATION: ${{ inputs.operation }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: python3 deploy/test/ssh-client.py "$OPERATION" --bundle "$RUNNER_TEMP/release/bundle.tar"

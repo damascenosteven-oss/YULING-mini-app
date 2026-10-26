@@ -14,7 +14,9 @@ POLICY = ROOT / ".engineering-guard/policy.json"
 
 
 class Fixture:
-    def __init__(self, approved=True, source=None):
+    def __init__(self, approved=True, source=None, issue="9"):
+        self.issue = issue
+        self.branch = f"issue/{issue}-engineering-guard"
         self.temp = tempfile.TemporaryDirectory(prefix="yuling-guard-test-")
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
@@ -36,8 +38,8 @@ class Fixture:
         self.git("add", "README.md")
         self.git("commit", "-m", "fixture base")
         self.base = self.git("rev-parse", "HEAD").stdout.strip()
-        self.git("checkout", "-b", "issue/9-engineering-guard")
-        approved_issue = json.loads(POLICY.read_text(encoding="utf-8"))["lifecycle"]["issues"]["9"]
+        self.git("checkout", "-b", self.branch)
+        approved_issue = json.loads(POLICY.read_text(encoding="utf-8"))["lifecycle"]["issues"][issue]
         for name in (approved_issue["plan"], approved_issue["adr"]):
             file = self.repo / name
             file.parent.mkdir(parents=True, exist_ok=True)
@@ -67,7 +69,7 @@ class Fixture:
         return self.run([sys.executable, self.script, *args, "--home", self.home], **kwargs)
 
     def commit(self):
-        self.git("commit", "-m", "fixture accepted Issue 9")
+        self.git("commit", "-m", f"fixture accepted Issue {self.issue}")
         return self.git("rev-parse", "HEAD").stdout.strip()
 
     def precommit(self):
@@ -76,7 +78,7 @@ class Fixture:
     def push(self, destination, deleting=False):
         head = self.git("rev-parse", "HEAD").stdout.strip()
         source = "0" * 40 if deleting else head
-        data = f"refs/heads/issue/9-engineering-guard {source} refs/heads/{destination} {self.base}\n"
+        data = f"refs/heads/{self.branch} {source} refs/heads/{destination} {self.base}\n"
         # Execute the installed pre-push entry with Git's exact stdin protocol;
         # no network push or remote main write is attempted by this test.
         input_file = self.root / "push-refs.txt"
@@ -86,7 +88,7 @@ class Fixture:
 
     def event(self, body):
         head = self.commit()
-        event = {"pull_request": {"head": {"sha": head, "ref": "issue/9-engineering-guard"},
+        event = {"pull_request": {"head": {"sha": head, "ref": self.branch},
                                    "base": {"sha": self.base}, "created_at": "2026-10-26T12:00:00Z",
                                    "body": body}}
         file = self.root / "event.json"
@@ -108,7 +110,7 @@ class GuardEntries(unittest.TestCase):
         policy = json.loads(POLICY.read_text(encoding="utf-8"))
         self.assertEqual(hashlib.sha256(CHECKER.read_bytes()).hexdigest(), policy["checker_sha256"])
         self.assertEqual(policy["lifecycle"]["effective_at"], "2026-10-22T04:50:03.733426+00:00")
-        self.assertEqual(set(policy["lifecycle"]["issues"]), {"9"})
+        self.assertEqual(set(policy["lifecycle"]["issues"]), {"8", "9"})
         self.assertEqual(policy["lifecycle"]["grandfathered"], {})
 
     def test_accepted_stage_commit_and_push_entry_pass(self):
@@ -116,6 +118,24 @@ class GuardEntries(unittest.TestCase):
         self.assertEqual(f.precommit().returncode, 0)
         f.commit()  # Actual Git commit invokes the installed hook.
         self.assertEqual(f.push("issue/9-engineering-guard").returncode, 0)
+
+    def test_issue_8_approved_stage_and_ci(self):
+        policy = json.loads(POLICY.read_text(encoding="utf-8"))
+        self.assertIn("8", policy["lifecycle"]["issues"])
+        f = self.fixture(issue="8")
+        self.assertEqual(f.precommit().returncode, 0)
+        event = f.event("Closes #9")
+        self.rejected(f.guard("ci", "--policy", f.policy_file, "--file", event, check=False),
+                      "PR must close the same Issue")
+        value = json.loads(event.read_text(encoding="utf-8"))
+        value["pull_request"]["body"] = "Closes #8"
+        event.write_text(json.dumps(value), encoding="utf-8")
+        self.assertEqual(f.guard("ci", "--policy", f.policy_file, "--file", event).returncode, 0)
+
+    def test_unapproved_issue_is_rejected(self):
+        f = self.fixture()
+        f.git("checkout", "-b", "issue/10-unapproved")
+        self.rejected(f.precommit(), "approval receipt missing")
 
     def test_wrong_branch_is_rejected(self):
         f = self.fixture()
