@@ -149,11 +149,28 @@ class RuntimeContract(unittest.TestCase):
                     "rootfs": {"diff_ids": ["sha256:" + "a" * 64]}}
         actual = {"Id": "sha256:" + "b" * 64, "Config": expected["config"].copy(),
                   "Architecture": "amd64", "Os": "linux", "RootFS": {"Layers": expected["rootfs"]["diff_ids"][:]}}
-        self.assertEqual(release.loaded_identity(actual, expected), actual["Id"])
+        data = json.dumps(expected).encode()
+        self.assertEqual(release.loaded_identity(actual, data), actual["Id"])
         for field, value in (("Config", {"User": "0"}), ("RootFS", {"Layers": []}), ("Architecture", "arm64")):
             broken = {**actual, field: value}
             with self.assertRaises(release.ReleaseError):
-                release.loaded_identity(broken, expected)
+                release.loaded_identity(broken, data)
+
+    def test_classic_docker_default_fields_do_not_change_content_identity(self):
+        expected = {"config": {"User": "10001:10001"}, "architecture": "amd64", "os": "linux",
+                    "rootfs": {"diff_ids": ["sha256:" + "a" * 64]}}
+        data = json.dumps(expected).encode()
+        actual = {"Id": "sha256:" + hashlib.sha256(data).hexdigest(),
+                  "Config": {**expected["config"], "Hostname": "", "Tty": False, "OnBuild": None},
+                  "Architecture": "amd64", "Os": "linux", "RootFS": {"Layers": expected["rootfs"]["diff_ids"][:]}}
+        self.assertEqual(release.loaded_identity(actual, data), actual["Id"])
+        for field, value in (("Id", "sha256:" + "b" * 64), ("RootFS", {"Layers": []}),
+                             ("Architecture", "arm64"), ("Os", "windows")):
+            with self.subTest(field=field), self.assertRaises(release.ReleaseError):
+                release.loaded_identity({**actual, field: value}, data)
+        changed = {**expected, "config": {"User": "0"}}
+        with self.assertRaises(release.ReleaseError):
+            release.loaded_identity(actual, json.dumps(changed).encode())
 
 
 class FakeRuntime:

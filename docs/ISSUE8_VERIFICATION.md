@@ -77,3 +77,21 @@ Issue #8 未登记时新增合法流程测试失败；登记真实批准后通�
 本地 1 核 / 1GiB 测试不构成服务器容量验收；不增加容器交换空间。
 实际服务器的 DeepSeek、COS、手机预览/分享、原站可用性尚须所有者发布后验证。
 Mac 原生复验、正式基线和最终引擎配对仍是独立门禁。本轮不合并、不部署。
+
+## 远端 CI 发现的 Docker 28 兼容性修复
+
+PR #11 首次 `release-checks` 在真实 SSH 发布入口报 `Loaded image content mismatch`。
+GitHub runner 的 Docker 为 28.0.4；本机隔离 Docker 28.0.4 已复现：镜像的配置摘要
+和图层不变，但 inspect 补入 Hostname、Tty、OnBuild 等空默认字段，整段配置字典
+比较因此误拒绝。Docker 29 的相同探针通过。探针未访问实际服务器。
+
+Critic Loop：保留整段比较 45/100（误拒绝有效正式包）；按已验证的原始配置字节
+SHA256 识别 classic-store 的 Id、同时核对图层/系统/架构 95/100（采用，维持内容
+绑定）；宽泛忽略空字段 60/100（增加隐式兼容规则，本轮不采用）。containerd 的
+Id 为索引摘要时仍要求配置字典完全相等。不改归档校验、资源限制或视觉阈值。
+
+新增回归先在原实现报错；修复接收器后重新验证，覆盖错误摘要、图层、系统、
+架构和被篡改的配置仍然拒绝。最终源码、完整 SSH 链路及 GitHub 结果以 PR 后续
+验证记录为准；此前 `eb0c80e` 的正式包证据仅属于该提交，不冒充新提交结果。
+
+环境来源：[GitHub runner 镜像清单](https://github.com/actions/runner-images/blob/ubuntu24/20261012.334/images/ubuntu/Ubuntu2404-Readme.md)。

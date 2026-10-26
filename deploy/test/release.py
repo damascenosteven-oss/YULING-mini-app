@@ -174,11 +174,13 @@ def validate_manifest(manifest, release):
             and re.fullmatch(r"[0-9a-f]{64}", manifest["image_sha256"]), "Invalid image checksum")
 
 
-def loaded_identity(actual, expected):
-    # Docker's classic store reports the configuration digest as Id; the
-    # containerd store reports a manifest/index digest. Verify the full runtime
-    # configuration and content-addressed layers before using the local Id.
-    require(actual.get("Config") == expected.get("config")
+def loaded_identity(actual, config_bytes):
+    # The classic store's Id binds the exact configuration bytes, even when
+    # older inspect APIs add empty default fields. Containerd can expose an
+    # index Id instead; in that case still require exact configuration equality.
+    expected = json.loads(config_bytes)
+    config_id = "sha256:" + hashlib.sha256(config_bytes).hexdigest()
+    require((actual.get("Id") == config_id or actual.get("Config") == expected.get("config"))
             and actual.get("RootFS", {}).get("Layers", []) == expected.get("rootfs", {}).get("diff_ids")
             and actual.get("Architecture") == expected.get("architecture")
             and actual.get("Os") == expected.get("os") == "linux"
@@ -248,7 +250,7 @@ class DockerRuntime:
         require("sha256:" + hashlib.sha256(data).hexdigest() == manifest["image_id"],
                 "Stored configuration identity mismatch")
         image = json.loads(self.call("image", "inspect", manifest["image_tag"]))[0]
-        return loaded_identity(image, json.loads(data))
+        return loaded_identity(image, data)
 
     def capacity(self):
         match = re.search(r"^MemAvailable:\s+(\d+)\s+kB$", Path("/proc/meminfo").read_text(), re.M)
