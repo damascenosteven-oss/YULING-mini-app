@@ -148,6 +148,10 @@ f=p/'authorized_keys';f.write_text('restrict,command="sudo -n /usr/bin/python3 -
             transfer = importlib.util.module_from_spec(transfer_spec)
             transfer_spec.loader.exec_module(transfer)
             transfer.checks(run, host, ssh, client, output)
+            probe_spec = importlib.util.spec_from_file_location("probe_entry", HERE / "deploy/test/probe-entry-checks.py")
+            probe = importlib.util.module_from_spec(probe_spec)
+            probe_spec.loader.exec_module(probe)
+            probe.checks(run, host, ssh, output)
             for index, letter in enumerate(("a", "b", "c")):
                 rid, tag, bundle = fixture(output, letter, failed=letter == "c")
                 tags.append(tag)

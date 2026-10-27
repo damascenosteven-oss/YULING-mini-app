@@ -15,6 +15,9 @@ import shutil
 import tarfile
 import tempfile
 import time
+import http.client
+import socket
+from urllib.parse import urlsplit
 
 ENGINE = "be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192"
 APPLICATION = "yuling-ppt-test"
@@ -26,11 +29,15 @@ MAX_IMAGE = 4 * 1024**3
 MIN_DISK = 8 * 1024**3
 RID = re.compile(r"[0-9a-f]{12}-[0-9]{1,20}-[0-9]{1,3}")
 RECEIVER_VERSION = 2
-CAPABILITIES = ["upload-progress-v1", "phased-upload-deadlines-v1"]
+CAPABILITIES = ["upload-progress-v1", "phased-upload-deadlines-v1", "bounded-probe-v1"]
 TRANSFER_SECONDS = 2700
 IDLE_SECONDS = 120
 PROCESSING_SECONDS = 900
 PROGRESS_SECONDS = 10
+PROBE_SIZE = 4 * 1024**2
+PROBE_SECONDS = 300
+PROBE_IDLE = 60
+PROBE_HOST = "yuling-ppt-test-1494859304.cos.ap-shanghai.myqcloud.com"
 
 
 class ReleaseError(RuntimeError):
@@ -117,6 +124,127 @@ class UploadProgress:
 def require(condition, message):
     if not condition:
         raise ReleaseError(message)
+
+
+class ProbeFailure(ReleaseError):
+    def __init__(self, code, progress=None):
+        self.detail = {"status": "failed", "code": code,
+                       **(progress.snapshot() if progress else {})}
+        super().__init__(code)
+
+
+class ProbeProgress(UploadProgress):
+    def __init__(self, clock=None):
+        super().__init__(PROBE_SIZE, clock)
+        self.stage = "probe_receive"
+        self.first_byte = None
+
+    def cancelled(self, *_):
+        raise ProbeFailure("probe_cancelled", self)
+
+    def __enter__(self):
+        super().__enter__()
+        self.handlers = {}
+        for name in ("SIGTERM", "SIGHUP"):
+            if hasattr(signal, name):
+                number = getattr(signal, name)
+                self.handlers[number] = signal.signal(number, self.cancelled)
+        return self
+
+    def __exit__(self, *args):
+        for number, handler in self.handlers.items():
+            signal.signal(number, handler)
+        super().__exit__(*args)
+
+    def check(self):
+        now = self.clock()
+        if now - self.start >= PROBE_SECONDS:
+            raise ProbeFailure("probe_timeout", self)
+        if now - self.last_data >= PROBE_IDLE:
+            raise ProbeFailure("probe_idle", self)
+
+    def arm(self):
+        end = min(self.start + PROBE_SECONDS, self.last_data + PROBE_IDLE)
+        signal.setitimer(signal.ITIMER_REAL, max(.001, min(10, end - self.clock())))
+
+    def received(self, amount):
+        if self.first_byte is None:
+            self.first_byte = self.clock() - self.start
+        super().received(amount)
+
+
+def probe_path(url, probe):
+    require(isinstance(url, str) and len(url) <= 3072 and not any(ord(c) < 33 for c in url),
+            "probe_boundary")
+    parsed = urlsplit(url)
+    require(parsed.scheme == "https" and parsed.netloc == PROBE_HOST and not parsed.fragment
+            and parsed.path == "/transfer-probe/" + probe + ".bin" and parsed.query,
+            "probe_boundary")
+    return parsed.path + "?" + parsed.query
+
+
+def probe_request(controller, request, stream):
+    operation = request["op"]
+    fields = {"op", "probe", "bytes", "sha256"}
+    require(set(request) == fields | ({"url"} if operation == "probe_download" else set()), "probe_boundary")
+    probe, size, expected = request["probe"], request["bytes"], request["sha256"]
+    require(isinstance(probe, str) and re.fullmatch(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,2}-[1-3]", probe)
+            and type(size) is int and size == PROBE_SIZE and isinstance(expected, str)
+            and re.fullmatch(r"[0-9a-f]{64}", expected), "probe_boundary")
+    require(not controller.state()["pending"], "probe_pending")
+    path = probe_path(request.get("url"), probe) if operation == "probe_download" else None
+    connection = None
+    metadata = {"dns": [], "peer": None, "connect_seconds": None}
+    temporary = Path(tempfile.mkdtemp(prefix="probe-", dir=controller.incoming))
+    progress = ProbeProgress()
+    progress.stage = "probe_download" if path else "probe_receive"
+    try:
+        with progress:
+            if path:
+                require(not stream.read(1), "probe_boundary")
+                metadata["dns"] = sorted({a[4][0] for a in socket.getaddrinfo(PROBE_HOST, 443, type=socket.SOCK_STREAM)})
+                connection = http.client.HTTPSConnection(PROBE_HOST, timeout=PROBE_IDLE)
+                connection.connect()
+                metadata["peer"] = connection.sock.getpeername()[0]
+                metadata["connect_seconds"] = time.monotonic() - progress.start
+                connection.request("GET", path, headers={"Accept-Encoding": "identity", "Connection": "close"})
+                response = connection.getresponse()
+                if response.status in (401, 403):
+                    raise ProbeFailure("probe_auth", progress)
+                if response.status != 200:
+                    raise ProbeFailure("probe_http", progress)
+                require(response.getheader("Content-Length") == str(PROBE_SIZE)
+                        and response.getheader("Content-Encoding") in (None, "identity"), "probe_integrity")
+                stream = response
+            checksum = hashlib.sha256()
+            with (temporary / "sample.bin").open("wb") as target:
+                while progress.count < PROBE_SIZE:
+                    data = getattr(stream, "read1", stream.read)(min(65536, PROBE_SIZE - progress.count))
+                    require(data, "probe_integrity")
+                    target.write(data)
+                    checksum.update(data)
+                    progress.received(len(data))
+                require(not stream.read(1) and checksum.hexdigest() == expected, "probe_integrity")
+            progress.check()
+            result = {"status": "measured", "probe": probe, "bytes": progress.count,
+                      "sha256": checksum.hexdigest(), "elapsed": time.monotonic() - progress.start,
+                      "first_byte_seconds": progress.first_byte, **metadata}
+    except ProbeFailure:
+        raise
+    except (TimeoutError, ConnectionError, http.client.HTTPException, socket.gaierror):
+        raise ProbeFailure("probe_network", progress) from None
+    except ReleaseError as error:
+        raise ProbeFailure(str(error), progress) from None
+    except OSError:
+        raise ProbeFailure("probe_io", progress) from None
+    finally:
+        if connection:
+            connection.close()
+        try:
+            shutil.rmtree(temporary)
+        except OSError:
+            raise ProbeFailure("probe_cleanup", progress) from None
+    return {**result, "cleaned": True}
 
 
 def valid_release(value):
@@ -561,6 +689,8 @@ def dispatch(controller, stream):
         raise ReleaseError("Invalid request JSON") from error
     require(isinstance(request, dict), "Request must be an object")
     operation = request.get("op")
+    if operation in ("probe_receive", "probe_download"):
+        return probe_request(controller, request, stream)
     if operation == "upload":
         return controller.upload(request, stream)
     require(not stream.read(1), "Unexpected trailing request data")
@@ -616,7 +746,7 @@ if __name__ == "__main__":
         main()
     except (ReleaseError, OSError, ValueError, KeyError, TypeError) as error:
         # Request/host errors are useful; avoid dumping tracebacks or environment data.
-        detail = (error.detail if isinstance(error, UploadDeadline) else {
+        detail = (error.detail if isinstance(error, (UploadDeadline, ProbeFailure)) else {
             "status": "failed", "code": "prior_state_restored" if "restored" in str(error)
             else "receiver_error", "error": str(error) if isinstance(error, ReleaseError)
             else "Invalid host state; owner inspection required"})

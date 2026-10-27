@@ -18,6 +18,12 @@ jobs:
           persist-credentials: false
       - name: Receiver, rollback and bootstrap boundary tests
         run: sudo python3 -m unittest discover -s deploy/test -p '*_test.py' -v
+      - name: Verify hash-pinned probe SDK without cloud credentials
+        run: |
+          python3 -m venv "$RUNNER_TEMP/probe-venv"
+          "$RUNNER_TEMP/probe-venv/bin/python" -m pip install --require-hashes -r deploy/test/requirements-probe-build.txt
+          "$RUNNER_TEMP/probe-venv/bin/python" -m pip install --no-build-isolation --require-hashes -r deploy/test/requirements-probe.txt
+          "$RUNNER_TEMP/probe-venv/bin/python" deploy/test/probe-sdk-check.py
       - name: Actual restricted SSH entry and Docker rollback
         run: python3 deploy/test/receiver-integration.py --output "$RUNNER_TEMP/receiver-entry"
       - name: Build without deployment credentials
@@ -32,6 +38,7 @@ jobs:
             ${{ runner.temp }}/release-check/packaged-candidate
             ${{ runner.temp }}/release-check/image-memory.txt
             ${{ runner.temp }}/receiver-entry/result.json
+            ${{ runner.temp }}/receiver-entry/probe-entry.json
             ${{ runner.temp }}/receiver-entry/fixture-docker-errors.log
           retention-days: 7
           if-no-files-found: warn

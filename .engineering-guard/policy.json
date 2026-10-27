@@ -33,6 +33,14 @@
         "adr": "docs/adr/0005-release-transfer-lifecycle.md",
         "plan_sha256": "90f7f12553cb2e804bcd4a864c55ea91e07adf674ed456dc0dd3c5569199b116",
         "adr_sha256": "9f2bc3d74350e44cbee04ac3cf44c7f94808b670596a31331322138d6392c33d"
+      },
+      "14": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/14",
+        "approval_source": "Owner explicitly approved the complete three-path bounded probe plan on 2026-10-27: prepare, test, push Issue branch and open PR. Owner alone merges, configures credentials, upgrades server and triggers tests. No production server action or publish authority.",
+        "plan": "docs/plans/issue-14-transfer-probe.md",
+        "adr": "docs/adr/0006-bounded-transfer-probe.md",
+        "plan_sha256": "a72666c5f52a14db0dfb2809a4090857c2818a081c91923936cf35cf53cb0068",
+        "adr_sha256": "baa5c01087adeb4bd620f624a81c8ee2742db805c19d3cbffc696a6738b1f3e7"
       }
     }
   }
