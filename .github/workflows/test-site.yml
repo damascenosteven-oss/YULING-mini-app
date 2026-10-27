@@ -28,7 +28,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - run: python3 -m unittest discover -s deploy/test -p '*_test.py' -v
+      - run: sudo python3 -m unittest discover -s deploy/test -p '*_test.py' -v
       - name: Verify restricted receiver and rollback before publishing
         run: python3 deploy/test/receiver-integration.py --output "$RUNNER_TEMP/receiver-entry"
       - name: Build pinned image and export verified source manifest

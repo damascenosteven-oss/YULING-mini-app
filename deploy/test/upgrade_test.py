@@ -12,8 +12,13 @@ from unittest.mock import patch
 from bootstrap_test import bootstrap
 
 
-@unittest.skipUnless(os.name == "posix" and getattr(os, "geteuid", lambda: -1)() == 0, "Linux root fixture required")
+@unittest.skipUnless(os.name == "posix", "Linux fixture required")
 class Upgrade(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if os.geteuid() != 0:
+            raise RuntimeError("Administrator upgrade tests require root; run this suite with sudo")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

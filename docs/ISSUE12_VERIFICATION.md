@@ -25,6 +25,10 @@ Playwright 1.64.0、Pillow 13.0.0；引擎 `be73ccd4e811bd877fb2635fd7dfc3ca3ad8
 
 ## 实测限制及失败记录
 
+- 首次 PR CI 的普通用户步骤跳过 6 项 root 升级边界测试；本地 root 已全部通过，但不能替代 CI。
+  已改为 Linux 非 root 明确失败，两处工作流通过 sudo 执行部署测试。
+  故意移除 root 身份的真实测试入口退出 5；恢复 root 后 52 项零跳过通过，退出 0。
+  最终 CI 结果以新提交为准，旧绿色结果不作为该修正的验证。
 - Windows 检出的测试 shell 脚本带 CRLF，Linux 无法执行；本地改用与 Git blob 一致的 LF。
   未更改脚本 Git 内容。Docker Desktop 不支持测试所需的网关地址绑定；没有放宽绑定规则。
 - Linux 隔离 Docker 初次拉取固定镜像遇到网络/TLS 错误。成功测试使用预先构建的同源码测试主机，
@@ -46,7 +50,7 @@ Playwright 1.64.0、Pillow 13.0.0；引擎 `be73ccd4e811bd877fb2635fd7dfc3ca3ad8
 | `deploy/test/release.py` | `d4526feed16f92b0131be01f12501a1deb1b74017a48f1ed0d0a5aad26174a9b` |
 | `deploy/test/bootstrap.py` | `54664eb07cd6445c53a553884350d548f4dcf37a0cf00ac86a1a3cd9704f165b` |
 | `deploy/test/ssh-client.py` | `e75f391e18b65c4fa46c0c6cdfed2f4908de41d8626e51410e12482c16208cae` |
-| `.github/workflows/test-site.yml` | `2d4bda03d58316b47360dd266442a3f2ef2e5aca67661df5ecc5aab037565aae` |
+| `.github/workflows/test-site.yml` | `8b6d686fa49097ad5f53b619fdf64c6014e69c813a1ac28b9ca512c24cfa640e` |
 
 ## 本地日志 SHA256
 
@@ -68,3 +72,5 @@ Playwright 1.64.0、Pillow 13.0.0；引擎 `be73ccd4e811bd877fb2635fd7dfc3ca3ad8
 | `development-image-build-2.log` | `08b97ea7220394dcc2913b37940ec792c0c092de9d1d8ba22b0843e5fe3ed7d4` |
 | `development-image-verify.log` | `4f33f7ca700868caec4daaba34f24208a9ce7faa137a9a8163421a8519787f23` |
 | `secrets-working.log` | `b4e9e4416651d6f0456bd4c86eda40c68d6a9334b7184a0fb0eff7ddb05a24b9` |
+| `ci-root-red.log` | `50b4e5a4eb42230942ada5ca605a1eaeb5c862fd9bd41ed625012097227c3833` |
+| `ci-root-green.log` | `1db4c21df144111dabf6e7147e0e3a751ba620ed990e8e8b062b99287272c0a2` |
