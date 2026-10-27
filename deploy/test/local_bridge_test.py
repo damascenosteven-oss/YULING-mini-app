@@ -127,6 +127,58 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(len(commands), 1)
         self.assertEqual(commands[0][-1], "rollback")
 
+    def test_bad_bundle_digest_never_uploads(self):
+        bridge = load("local-bridge")
+        deployment = {"id": 8, "sha": "a" * 40,
+                      "payload": {"run_id": 42, "attempt": 1}}
+        stages = []
+        def fake_run(*args, env=None):
+            if len(args) > 1 and str(args[1]).endswith("build-image.py"):
+                output = Path(args[-1])
+                output.mkdir()
+                (output / "bundle.tar").write_bytes(b"fixture")
+                (output / "bundle.sha256").write_text("0" * 64 + "  bundle.tar\n")
+            if "--stage" in args:
+                stages.append(args[args.index("--stage") + 1])
+        def git_output(args, **kwargs):
+            return "a" * 40 if args[-1] == "HEAD" else b""
+        with patch.object(bridge, "run", side_effect=fake_run), \
+                patch.object(bridge.subprocess, "check_output", side_effect=git_output):
+            with self.assertRaises(bridge.StepFailure) as raised:
+                bridge.build_and_transfer(object(), deployment, "publish", {})
+        self.assertEqual(raised.exception.step, "bundle_digest")
+        self.assertEqual(stages, [])
+
+    def test_upload_failure_never_activates(self):
+        bridge = load("local-bridge")
+        deployment = {"id": 8, "sha": "a" * 40,
+                      "payload": {"run_id": 42, "attempt": 1}}
+        config = {"host": "115.159.143.24", "ssh_key": "fixture",
+                  "known_hosts": "fixture"}
+        stages = []
+        def fake_run(*args, env=None):
+            if len(args) > 1 and str(args[1]).endswith("build-image.py"):
+                output = Path(args[-1])
+                output.mkdir()
+                (output / "bundle.tar").write_bytes(b"fixture")
+                (output / "bundle.sha256").write_text(
+                    hashlib.sha256(b"fixture").hexdigest() + "  bundle.tar\n")
+            if "--stage" in args:
+                stage = args[args.index("--stage") + 1]
+                stages.append(stage)
+                if stage == "upload":
+                    raise OSError("simulated interruption")
+        def git_output(args, **kwargs):
+            return "a" * 40 if args[-1] == "HEAD" else b""
+        with patch.object(bridge, "run", side_effect=fake_run), \
+                patch.object(bridge, "checked_request", return_value="publish"), \
+                patch.object(bridge, "secret", return_value="fixture"), \
+                patch.object(bridge.subprocess, "check_output", side_effect=git_output):
+            with self.assertRaises(bridge.StepFailure) as raised:
+                bridge.build_and_transfer(object(), deployment, "publish", config)
+        self.assertEqual(raised.exception.step, "restricted_upload")
+        self.assertEqual(stages, ["upload"])
+
 
 if __name__ == "__main__":
     unittest.main()
