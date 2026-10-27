@@ -5,6 +5,9 @@
 1 核/1GiB 是受控试跑上限，不是容量保证；不增加容器 swap。
 Mac 正式验收仍待完成，正式引擎锁不变。
 
+**Issue #16 之后的发布入口以 [手机触发，电脑执行](PHONE_LOCAL_RELEASE.md) 为准。**
+下方服务器初始化、测试站验收和首次失败恢复步骤继续适用。
+
 ## 1. 手机审核 PR
 
 在 GitHub App 打开本仓库的 Pull Requests，进入部署 PR：
@@ -38,8 +41,8 @@ git rev-parse HEAD
 确认输出与手机上审核的 `main` 提交一致，阅读 `deploy/test/bootstrap.py` 和
 `deploy/test/release.py`。后续升级受限接收程序需要另行审核；初始化不会覆盖已有不同版本。
 
-创建仅用于此测试站的 ed25519 SSH 密钥对。私钥只进入 GitHub `ppt-test`
-环境 Secret，公钥用于初始化。不要复用个人登录密钥，也不要把私钥发到聊天、
+创建仅用于此测试站的 ed25519 SSH 密钥对。Issue #16 后私钥只保存在电脑
+受限文件，公钥用于服务器初始化。不要复用个人登录密钥，也不要把私钥发到聊天、
 Issue、仓库文件或截图。自动发布使用的密钥不能要求交互输入口令。
 
 以下命令中的容器、网络和公钥路径需替换为核实后的值：
@@ -57,23 +60,17 @@ sudo python3 deploy/test/bootstrap.py secrets
 已有配置不覆盖。首轮不输入 Bocha；联网调研仍明确提示未配置。
 COS 使用私有桶、仅该测试项目所需权限，不能用云账号管理员权限。
 
-`prepare` 输出主机公钥及指纹。通过这个可信终端核对后，将公钥保存为
-GitHub 的已知主机记录；不能在工作流里临时扫描主机公钥并直接信任。
+`prepare` 输出主机公钥及指纹。通过这个可信终端核对后，将公钥保存于
+电脑专用已知主机文件；不能在发布时临时扫描主机公钥并直接信任。
 
 ## 3. 用 Safari 设置 GitHub 测试环境
 
 打开仓库 Settings → Environments → New environment，名称 **`ppt-test`**。
 限制部署分支为 `main`；账号方案允许时添加必需审批者。
-在该环境内添加三个 Secrets：
-
-| 名称 | 内容 |
-| --- | --- |
-| `DEPLOY_HOST` | 核实的服务器 IP 或 SSH 主机名，不含协议和端口 |
-| `DEPLOY_SSH_KEY` | 测试站专用 SSH 私钥全文 |
-| `SSH_KNOWN_HOSTS` | `服务器IP ssh-ed25519 公钥内容`，与可信终端输出一致 |
-
-SSH 使用 22 端口和受限账户 `yuling-ppt-deploy`。应用 API 密钥保留在服务器，
-不放入 GitHub 构建环境。SSH 不可达就停止，排查访问路径；不自动放开安全组。
+Issue #16 后，手机请求工作流不再使用 GitHub 中的三个旧部署 Secrets；
+可在新链路通过验收后删除。SSH 使用 22 端口和受限账户
+`yuling-ppt-deploy`，凭据只在电脑。应用 API 密钥保留在服务器。
+SSH 不可达就停止，排查访问路径；不自动放开安全组。
 
 ## 4. 接入测试域名
 
@@ -90,45 +87,10 @@ sudo python3 deploy/test/bootstrap.py connect-site \
 
 ## 5. 手机手动发布
 
-Issue #12 修复合并后，先由管理员核对合并提交并升级接收程序，再启动新发布。
-旧接收器缺少版本能力信息时，新客户端会在上传前停止并提示升级。
-管理员在已审核的检出目录执行（旧哈希必须先通过可信终端核对）：
-
-```bash
-sudo sha256sum /usr/local/libexec/yuling-ppt-release.py
-sudo python3 deploy/test/bootstrap.py upgrade-receiver --expected-sha256 <已核对的旧程序完整SHA256>
-```
-
-升级使用与发布相同的操作锁；备份保存在 `/etc/yuling-ppt-test/receiver-<旧哈希>.before`。
-哈希不符或操作正在运行时停止；安装校验失败恢复旧程序。升级不改秘密、SSH 授权或 Caddy。
-管理员检查新版本、受限入口状态和原站健康后，所有者才继续以下手机步骤。
-
-Safari 打开仓库 → Actions → **PPT test site — publish or rollback**：
-
-1. 点 **Run workflow**。
-2. Branch 选择 **main**；operation 选择 **publish**。
-3. 确认运行。先在 GitHub 构建并验证镜像，再执行受限服务器操作。
-4. 查看 build 和 release 两个任务；若有环境审批提示，由指定审批者确认。
-5. 打开测试网址，完成下节验收。App 未显示按钮时使用 Safari 的桌面网站模式。
-
-首次失败记录仍绑定旧提交，**不要重跑那条旧记录**。修复合并和接收器升级完成后，
-使用 `Run workflow → main → publish` 创建新运行。
-新工作流按 build 返回的固定 artifact ID 下载；只重跑失败的 release 时沿用该成功构建的 ID，
-全量重跑使用新 build 的 ID。ID 缺失、产物过期或摘要/版本不符均停止，不选择最新产物兜底。
-只重跑失败任务在本地只能模拟；真实 GitHub 重跑结果单独记录。
-
-release 日志显示 `receive`（收包）、`archive`（归档校验）、`image`（镜像校验）、
-`normalize`（整理）和 `stored`（保存）阶段，并报告字节数及累计秒数。
-上传最长 45 分钟，120 秒无新数据即失败；收包后的校验整理最多 15 分钟。
-客户端上传最多 65 分钟，release 任务最多 90 分钟，部署/回滚接收端仍最多 15 分钟。
-这些是有界设计预算，尚不证明真实服务器网络能在预算内完成。
-失败时保留失败阶段、字节数和错误代码交给维护者检查，不连续重试或自行增加时限。
-
-工作流只接受 main，发布串行执行，服务器不编译代码、不登录镜像仓库。
-归档、应用 SHA、引擎 SHA、内容摘要不匹配会拒绝。上传失败可重试相同产物；
-结果不明确时先看任务输出和服务器 `state.json`，不要连续点击发布。
-构建的候选引擎固定为 `be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192`，
-与正式锁的区别记录在发布清单中。
+Issue #16 合并后，请按 [手机触发，电脑执行](PHONE_LOCAL_RELEASE.md) 准备电脑接力程序，
+然后从手机选择 `main → publish`。GitHub 只传递小型请求并显示电脑回报的结果；
+构建、镜像验证和受限 SSH 上传在电脑完成。不要重跑仍绑定旧提交的失败记录。
+程序不会自动扩容、切换版本或重试失败请求。
 
 ## 6. 所有者验收与容量观察
 

@@ -149,7 +149,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("operation", choices=("publish", "rollback", "status"))
     parser.add_argument("--bundle", type=Path)
+    parser.add_argument("--stage", choices=("all", "upload", "activate"), default="all")
     args = parser.parse_args()
+    if args.operation != "publish" and args.stage != "all":
+        raise RuntimeError("Staged operations are only available for publish")
     if os.environ.get("GITHUB_REF") != "refs/heads/main":
         raise RuntimeError("Manual releases accept main only")
     host = os.environ["DEPLOY_HOST"]
@@ -185,9 +188,11 @@ def main():
             expected = args.bundle.with_name("bundle.sha256").read_text().split()[0]
             if checksum != expected:
                 raise RuntimeError("Release bundle checksum mismatch")
-            request(command, {"op": "upload", "release": manifest["release"],
-                              "bytes": args.bundle.stat().st_size, "sha256": checksum}, args.bundle)
-            request(command, {"op": "deploy", "release": manifest["release"]})
+            if args.stage in ("all", "upload"):
+                request(command, {"op": "upload", "release": manifest["release"],
+                                  "bytes": args.bundle.stat().st_size, "sha256": checksum}, args.bundle)
+            if args.stage in ("all", "activate"):
+                request(command, {"op": "deploy", "release": manifest["release"]})
         else:
             request(command, {"op": "rollback"})
         external_port_closed(host)
