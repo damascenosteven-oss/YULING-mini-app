@@ -2,6 +2,8 @@
 import importlib.util
 import io
 import json
+import hashlib
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -50,6 +52,31 @@ class ClientBoundary(unittest.TestCase):
         for error in (ConnectionRefusedError(), TimeoutError()):
             with patch.object(client.socket, "create_connection", side_effect=error):
                 client.external_port_closed("example.invalid")
+
+    def test_upload_and_activation_are_separate_restricted_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = root / "bundle.tar"
+            bundle.write_bytes(b"fixture")
+            (root / "release.json").write_text(json.dumps({
+                "app_sha": "a" * 40, "release": "a" * 12 + "-42-1"}))
+            (root / "bundle.sha256").write_text(hashlib.sha256(b"fixture").hexdigest() + "  bundle.tar\n")
+            env = {"GITHUB_REF": "refs/heads/main", "GITHUB_SHA": "a" * 40,
+                   "DEPLOY_HOST": "example.invalid", "DEPLOY_SSH_KEY": "fixture",
+                   "SSH_KNOWN_HOSTS": "fixture"}
+            for stage, expected in (("upload", ["status", "upload"]),
+                                    ("activate", ["status", "deploy"])):
+                operations = []
+                def fake_request(command, header, bundle=None):
+                    operations.append(header["op"])
+                    return {"receiver_version": 2, "capabilities": [
+                        "upload-progress-v1", "phased-upload-deadlines-v1"]}
+                with patch.dict(os.environ, env), patch.object(sys, "argv", [
+                        "ssh-client.py", "publish", "--bundle", str(bundle), "--stage", stage]), \
+                        patch.object(client, "request", side_effect=fake_request), \
+                        patch.object(client, "external_port_closed"):
+                    client.main()
+                self.assertEqual(operations, expected)
 
 
 if __name__ == "__main__":

@@ -129,12 +129,14 @@ sys.exit(1)
 
 
 class WorkflowBinding(unittest.TestCase):
-    def test_download_is_bound_to_successful_build_id(self):
+    def test_phone_request_has_no_cloud_bundle_upload(self):
         content = (Path(__file__).resolve().parents[2] / ".github/workflows/test-site.yml").read_text(encoding="utf-8")
-        self.assertIn("artifact-ids: ${{ needs.build.outputs.artifact_id }}", content)
-        self.assertIn("artifact_id: ${{ steps.release_artifact.outputs.artifact-id }}", content)
-        self.assertIn("timeout-minutes: 90", content)
-        self.assertIn("Verify build artifact reference", content)
+        self.assertIn("run: python3 deploy/test/phone-request.py", content)
+        self.assertIn("environment: ppt-test", content)
+        self.assertIn("group: ppt-test-server", content)
+        self.assertNotIn("upload-artifact", content)
+        self.assertNotIn("download-artifact", content)
+        self.assertNotIn("ssh-client.py", content)
 
 
 if __name__ == "__main__":
