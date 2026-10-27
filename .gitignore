@@ -16,3 +16,7 @@ backups/
 
 # The real reverse-proxy address exists only on the server.
 deploy/Caddyfile
+
+# Deployment helper bytecode is generated locally.
+__pycache__/
+*.pyc

@@ -27,6 +27,8 @@ export async function POST(request: NextRequest) {
     if (error instanceof UnsupportedSkillError) return NextResponse.json({ error: error.message, code: error.code }, { status: 422 });
     return NextResponse.json({ error: '动效方案校验失败，请换一套动效后重试' }, { status: 422 });
   }
+  // Reading the body yields; another request may have claimed the slot meanwhile.
+  if (activeBuilds >= 1) return NextResponse.json({ error: '服务器正在逐页检查其他课件，请稍后重试' }, { status: 429 });
   const requestId = randomUUID();
   const device = deviceIdentity(request);
   activeBuilds += 1;
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
     if (device.cookieValue) response.cookies.set(DEVICE_COOKIE, device.cookieValue, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: false,
+      secure: process.env.NODE_ENV === 'production',
       path: '/',
       maxAge: DEVICE_MAX_AGE_SECONDS,
     });

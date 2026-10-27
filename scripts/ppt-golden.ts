@@ -175,7 +175,7 @@ async function capturePage(browser: Browser, htmlUrl: string, pageIndex: number,
   }
 }
 
-async function captureAll(browser: Browser, htmlPath: string, destination: string): Promise<Array<{ file: string; buffer: Buffer; geometry: GeometryPage }>> {
+export async function captureAll(browser: Browser, htmlPath: string, destination: string): Promise<Array<{ file: string; buffer: Buffer; geometry: GeometryPage }>> {
   await mkdir(destination, { recursive: true });
   const htmlUrl = pathToFileURL(htmlPath).href;
   const captured: Array<{ file: string; buffer: Buffer; geometry: GeometryPage }> = [];
@@ -190,7 +190,7 @@ async function captureAll(browser: Browser, htmlPath: string, destination: strin
   return captured;
 }
 
-function strictDiff(expectedBuffer: Buffer, actualBuffer: Buffer): { pixels: number; image: PNG } {
+export function strictDiff(expectedBuffer: Buffer, actualBuffer: Buffer): { pixels: number; image: PNG } {
   const expected = PNG.sync.read(expectedBuffer);
   const actual = PNG.sync.read(actualBuffer);
   if (expected.width !== actual.width || expected.height !== actual.height) throw new Error('PNG dimensions differ');
@@ -378,7 +378,9 @@ async function captureCandidate(output: string): Promise<void> {
   }
 }
 
-main().catch(error => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (['ppt-golden.ts', 'ppt-golden.js', 'ppt-golden.mjs'].includes(path.basename(process.argv[1] || ''))) {
+  main().catch(error => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

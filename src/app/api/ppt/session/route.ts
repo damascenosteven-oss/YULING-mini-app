@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   response.cookies.set(SESSION_COOKIE, createSessionToken(), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   if (device.cookieValue) response.cookies.set(DEVICE_COOKIE, device.cookieValue, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: DEVICE_MAX_AGE_SECONDS,
   });
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(SESSION_COOKIE, '', { httpOnly: true, sameSite: 'lax', secure: false, path: '/', maxAge: 0 });
+  response.cookies.set(SESSION_COOKIE, '', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 0 });
   return response;
 }
 
@@ -52,7 +52,7 @@ export function GET(request: NextRequest) {
   if (device.cookieValue) response.cookies.set(DEVICE_COOKIE, device.cookieValue, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: DEVICE_MAX_AGE_SECONDS,
   });
