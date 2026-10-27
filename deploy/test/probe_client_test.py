@@ -84,6 +84,16 @@ class ProbeClient(unittest.TestCase):
         self.assertNotIn('SECRET', output.getvalue())
         self.assertIn('probe_receive', output.getvalue())
 
+    def test_actual_client_timeout_is_a_failed_sample_with_last_progress(self):
+        import sys
+        command = [sys.executable, '-c', "import sys,time;print('{\"event\":\"progress\",\"phase\":\"probe_receive\",\"received\":1,\"total\":4194304,\"elapsed\":0.01}',file=sys.stderr,flush=True);time.sleep(5)"]
+        report = {'samples': []}
+        with patch.object(probe, 'CLIENT_SECONDS', .5), contextlib.redirect_stdout(io.StringIO()):
+            row = probe.measure(report, 'ssh', 1, lambda: probe.request(command, {'op': 'probe_receive'}))
+        self.assertEqual(row['status'], 'failed')
+        self.assertEqual(row['code'], 'probe_timeout')
+        self.assertEqual(row['received'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -22,12 +22,13 @@ Windows 应用测试使用 Node 22.23.3、pnpm 9.0.0、Python 3.12.10、Pillow 1
 | `pnpm test:ppt:golden:geometry` | 12 页通过 |
 | `pnpm build` | 退出 0 |
 | `pnpm audit --json`、`pnpm audit --prod --json` | 均退出 0，未报已知漏洞 |
-| Linux `python -m unittest discover -s deploy/test -p '*_test.py' -v` | 69 项通过，无跳过 |
+| Linux `python -m unittest discover -s deploy/test -p '*_test.py' -v` | 70 项通过，无跳过 |
 | `python .engineering-guard/test_guard.py` | 14 项通过，含 Issue #14 暂存区错误及错误 PR 关联拒绝 |
 | 哈希固定安装后 `python deploy/test/probe-sdk-check.py` | 官方 SDK PUT/GET/DELETE 签名验证通过，无云请求 |
 | 测速及构建工具的 `pip-audit` | 13 个固定依赖未报已知漏洞 |
 
 红绿证据包括初始缺失测速实现、SIGTERM 清理入口、下载请求正文 EOF 在计时范围内的失败与修复。
+客户端等待上限另经真实子进程红绿测试，保留最后进度并作为失败样本继续独立链路。
 另在隔离源码副本故意破坏大小、摘要、pending、域名、空闲时限、总时限、失败样本统计和未验证 COS 统计；
 8 项故障均被测试拒绝。没有修改正式门禁检查器或关闭钩子。
 
@@ -76,3 +77,5 @@ SDK 的签名起始时间会向前预留 60 秒；校验固定时间下的起点
 | secrets-final.log | 6baa8b44cbbfdc6febd0ee6010123bd5dd094a9663ed2df485b794f5c70ace9b |
 | staged-source.json | bcbb11a44d1efa3ebb3932eeb7d09332a97bd65f9edec0394697e6ffbc5ff43e |
 | agent-entry.json | e3566b3a06430868d71e9287dfd6c6c520a3da027aabea01951d407ee131dc2f |
+| client-timeout-red.log | 7fc0b74ac3b087c0d31e584ad030da91f0f463b072b45880b3c26099f18987b3 |
+| unit-linux-timeout-final.log | a8594e70cbaa4cebed62d281725d63b130dceb92275a8b2450a62f3281737734 |

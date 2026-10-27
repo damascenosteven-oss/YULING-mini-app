@@ -155,6 +155,8 @@ def cos_request(method, url, probe, data=b''):
 def failure_code(error):
     if isinstance(error, release.ProbeFailure):
         return error.detail['code']
+    if str(error).startswith('client_timeout '):
+        return 'probe_timeout'
     try:
         value = json.loads(str(error))
         return value.get('code', 'probe_protocol') if isinstance(value, dict) else 'probe_protocol'
@@ -178,7 +180,7 @@ def measure(report, path, round_number, function):
         code = failure_code(error)
         row.update(status='failed', code=code, client_seconds=time.monotonic() - start)
         try:
-            detail = error.detail if isinstance(error, release.ProbeFailure) else json.loads(str(error))
+            detail = error.detail if isinstance(error, release.ProbeFailure) else json.loads(str(error).removeprefix('client_timeout '))
             if isinstance(detail, dict):
                 row.update(ssh_client.progress_fields(detail))
         except ValueError:
