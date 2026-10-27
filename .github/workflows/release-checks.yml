@@ -17,7 +17,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Receiver, rollback and bootstrap boundary tests
-        run: python3 -m unittest discover -s deploy/test -p '*_test.py' -v
+        run: sudo python3 -m unittest discover -s deploy/test -p '*_test.py' -v
       - name: Actual restricted SSH entry and Docker rollback
         run: python3 deploy/test/receiver-integration.py --output "$RUNNER_TEMP/receiver-entry"
       - name: Build without deployment credentials

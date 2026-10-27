@@ -10,6 +10,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import tempfile
 import urllib.request
 
 ROOT = Path("/opt/yuling-ppt-test")
@@ -219,6 +220,85 @@ def restore_site():
     print("Only the appended test site was removed; original configuration restored and verified.")
 
 
+def verify_receiver(path):
+    result = json.loads(call(sys.executable, "-I", path, "--self-check"))
+    require(result == {"receiver_version": 2, "capabilities": ["upload-progress-v1", "phased-upload-deadlines-v1"]},
+            "Candidate receiver capability check failed")
+
+
+def atomic_program(data):
+    descriptor, name = tempfile.mkstemp(prefix=".ppt-receiver-", dir=HELPER.parent)
+    path = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as file:
+            os.fchmod(file.fileno(), 0o755)
+            file.write(data)
+            file.flush()
+            os.fsync(file.fileno())
+        return path
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+
+
+def upgrade_receiver(expected):
+    import fcntl
+    require(os.geteuid() == 0, "Receiver upgrade requires administrator access")
+    require(re.fullmatch(r"[0-9a-f]{64}", expected), "Supply the verified old receiver hash")
+    for path in (ROOT, CONF, HELPER.parent):
+        require(path.is_dir() and not path.is_symlink() and path.stat().st_uid == 0
+                and not path.stat().st_mode & 0o022, "Unsafe upgrade directory")
+    require(HELPER.is_file() and not HELPER.is_symlink() and HELPER.stat().st_uid == 0
+            and stat.S_IMODE(HELPER.stat().st_mode) == 0o755, "Unsafe installed receiver")
+    lock_path = ROOT / "receiver.lock"
+    require(not lock_path.is_symlink(), "Unsafe operation lock")
+    with lock_path.open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError("Another PPT operation is running; upgrade stopped") from error
+        state = ROOT / "state.json"
+        if state.exists():
+            require(not json.loads(state.read_text()).get("pending"), "Pending operation requires owner recovery")
+        candidate = Path(__file__).with_name("release.py").read_bytes()
+        compile(candidate, "release.py", "exec")
+        before = HELPER.read_bytes()
+        backup = CONF / ("receiver-" + expected + ".before")
+        if before == candidate:
+            require(digest(before) == expected or (backup.is_file() and not backup.is_symlink()
+                    and digest(backup.read_bytes()) == expected), "Unknown previous receiver hash")
+            verify_receiver(HELPER)
+            print("Receiver already current. SHA256 " + digest(candidate))
+            return
+        require(digest(before) == expected, "Installed receiver hash differs; upgrade stopped")
+        create_only(backup, before)
+        staged = atomic_program(candidate)
+        replaced = False
+        try:
+            verify_receiver(staged)
+            require(HELPER.read_bytes() == before, "Receiver changed during upgrade")
+            os.replace(staged, HELPER)
+            replaced = True
+            require(HELPER.read_bytes() == candidate and HELPER.stat().st_uid == 0
+                    and stat.S_IMODE(HELPER.stat().st_mode) == 0o755, "Installed receiver verification failed")
+            verify_receiver(HELPER)
+        except Exception as error:
+            if replaced:
+                require(HELPER.read_bytes() == candidate, "Concurrent receiver edit; owner recovery required")
+                require(backup.read_bytes() == before, "Backup changed; owner recovery required")
+                recovery = atomic_program(before)
+                try:
+                    os.replace(recovery, HELPER)
+                    require(HELPER.read_bytes() == before, "Old receiver restore failed")
+                finally:
+                    recovery.unlink(missing_ok=True)
+                raise RuntimeError("Upgrade verification failed; verified old receiver restored") from error
+            raise
+        finally:
+            staged.unlink(missing_ok=True)
+        print("Receiver upgraded. SHA256 " + digest(candidate))
+
+
 def main():
     require(os.geteuid() == 0, "Run reviewed setup with sudo in your terminal")
     parser = argparse.ArgumentParser()
@@ -232,6 +312,8 @@ def main():
     site.add_argument("--domain", required=True)
     site.add_argument("--existing-site", required=True)
     commands.add_parser("restore-site")
+    upgrade = commands.add_parser("upgrade-receiver")
+    upgrade.add_argument("--expected-sha256", required=True)
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args)
@@ -239,6 +321,8 @@ def main():
         store_secrets()
     elif args.command == "connect-site":
         connect_site(args)
+    elif args.command == "upgrade-receiver":
+        upgrade_receiver(args.expected_sha256)
     else:
         restore_site()
 

@@ -110,7 +110,7 @@ class GuardEntries(unittest.TestCase):
         policy = json.loads(POLICY.read_text(encoding="utf-8"))
         self.assertEqual(hashlib.sha256(CHECKER.read_bytes()).hexdigest(), policy["checker_sha256"])
         self.assertEqual(policy["lifecycle"]["effective_at"], "2026-10-22T04:50:03.733426+00:00")
-        self.assertEqual(set(policy["lifecycle"]["issues"]), {"8", "9"})
+        self.assertEqual(set(policy["lifecycle"]["issues"]), {"8", "9", "12"})
         self.assertEqual(policy["lifecycle"]["grandfathered"], {})
 
     def test_accepted_stage_commit_and_push_entry_pass(self):
@@ -136,6 +136,26 @@ class GuardEntries(unittest.TestCase):
         f = self.fixture()
         f.git("checkout", "-b", "issue/10-unapproved")
         self.rejected(f.precommit(), "approval receipt missing")
+
+    def test_issue_12_real_entries_require_matching_approved_source(self):
+        f = self.fixture(issue="12")
+        name = f.policy["lifecycle"]["issues"]["12"]["plan"]
+        file = f.repo / name
+        accepted = file.read_bytes()
+        file.write_bytes(accepted.replace(b"status: accepted", b"status: proposed"))
+        f.git("add", name)
+        file.write_bytes(accepted)
+        self.rejected(f.precommit(), "plan/base mismatch")
+        f.git("add", name)
+        self.assertEqual(f.precommit().returncode, 0)
+        event = f.event("Closes #8")
+        self.rejected(f.guard("ci", "--policy", f.policy_file, "--file", event, check=False),
+                      "PR must close the same Issue")
+        value = json.loads(event.read_text())
+        value["pull_request"]["body"] = "Closes #12"
+        event.write_text(json.dumps(value), encoding="utf-8")
+        self.assertEqual(f.guard("ci", "--policy", f.policy_file, "--file", event).returncode, 0)
+        self.assertEqual(f.push(f.branch).returncode, 0)
 
     def test_wrong_branch_is_rejected(self):
         f = self.fixture()

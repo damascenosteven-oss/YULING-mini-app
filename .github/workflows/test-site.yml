@@ -21,12 +21,14 @@ jobs:
     if: github.ref == 'refs/heads/main' && inputs.operation == 'publish'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    outputs:
+      artifact_id: ${{ steps.release_artifact.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - run: python3 -m unittest discover -s deploy/test -p '*_test.py' -v
+      - run: sudo python3 -m unittest discover -s deploy/test -p '*_test.py' -v
       - name: Verify restricted receiver and rollback before publishing
         run: python3 deploy/test/receiver-integration.py --output "$RUNNER_TEMP/receiver-entry"
       - name: Build pinned image and export verified source manifest
@@ -34,6 +36,7 @@ jobs:
       - name: Test final image, static assets, Python and two independent captures
         run: python3 deploy/test/verify-image.py --build-output "$RUNNER_TEMP/release"
       - uses: actions/upload-artifact@v7
+        id: release_artifact
         with:
           name: ppt-release-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -60,17 +63,22 @@ jobs:
       ((inputs.operation == 'publish' && needs.build.result == 'success') ||
        (inputs.operation == 'rollback' && needs.build.result == 'skipped'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 90
     environment: ppt-test
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Verify build artifact reference
+        if: inputs.operation == 'publish'
+        env:
+          BUILD_ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+        run: python3 deploy/test/artifact-reference.py
       - uses: actions/download-artifact@v8
         if: inputs.operation == 'publish'
         with:
-          name: ppt-release-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
           path: ${{ runner.temp }}/release
       - name: Restricted server operation
         env:

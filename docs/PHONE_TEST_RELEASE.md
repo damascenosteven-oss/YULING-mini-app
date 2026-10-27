@@ -90,6 +90,19 @@ sudo python3 deploy/test/bootstrap.py connect-site \
 
 ## 5. 手机手动发布
 
+Issue #12 修复合并后，先由管理员核对合并提交并升级接收程序，再启动新发布。
+旧接收器缺少版本能力信息时，新客户端会在上传前停止并提示升级。
+管理员在已审核的检出目录执行（旧哈希必须先通过可信终端核对）：
+
+```bash
+sudo sha256sum /usr/local/libexec/yuling-ppt-release.py
+sudo python3 deploy/test/bootstrap.py upgrade-receiver --expected-sha256 <已核对的旧程序完整SHA256>
+```
+
+升级使用与发布相同的操作锁；备份保存在 `/etc/yuling-ppt-test/receiver-<旧哈希>.before`。
+哈希不符或操作正在运行时停止；安装校验失败恢复旧程序。升级不改秘密、SSH 授权或 Caddy。
+管理员检查新版本、受限入口状态和原站健康后，所有者才继续以下手机步骤。
+
 Safari 打开仓库 → Actions → **PPT test site — publish or rollback**：
 
 1. 点 **Run workflow**。
@@ -97,6 +110,19 @@ Safari 打开仓库 → Actions → **PPT test site — publish or rollback**：
 3. 确认运行。先在 GitHub 构建并验证镜像，再执行受限服务器操作。
 4. 查看 build 和 release 两个任务；若有环境审批提示，由指定审批者确认。
 5. 打开测试网址，完成下节验收。App 未显示按钮时使用 Safari 的桌面网站模式。
+
+首次失败记录仍绑定旧提交，**不要重跑那条旧记录**。修复合并和接收器升级完成后，
+使用 `Run workflow → main → publish` 创建新运行。
+新工作流按 build 返回的固定 artifact ID 下载；只重跑失败的 release 时沿用该成功构建的 ID，
+全量重跑使用新 build 的 ID。ID 缺失、产物过期或摘要/版本不符均停止，不选择最新产物兜底。
+只重跑失败任务在本地只能模拟；真实 GitHub 重跑结果单独记录。
+
+release 日志显示 `receive`（收包）、`archive`（归档校验）、`image`（镜像校验）、
+`normalize`（整理）和 `stored`（保存）阶段，并报告字节数及累计秒数。
+上传最长 45 分钟，120 秒无新数据即失败；收包后的校验整理最多 15 分钟。
+客户端上传最多 65 分钟，release 任务最多 90 分钟，部署/回滚接收端仍最多 15 分钟。
+这些是有界设计预算，尚不证明真实服务器网络能在预算内完成。
+失败时保留失败阶段、字节数和错误代码交给维护者检查，不连续重试或自行增加时限。
 
 工作流只接受 main，发布串行执行，服务器不编译代码、不登录镜像仓库。
 归档、应用 SHA、引擎 SHA、内容摘要不匹配会拒绝。上传失败可重试相同产物；
