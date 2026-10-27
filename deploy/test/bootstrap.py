@@ -222,7 +222,7 @@ def restore_site():
 
 def verify_receiver(path):
     result = json.loads(call(sys.executable, "-I", path, "--self-check"))
-    require(result == {"receiver_version": 2, "capabilities": ["upload-progress-v1", "phased-upload-deadlines-v1"]},
+    require(result == {"receiver_version": 2, "capabilities": ["upload-progress-v1", "phased-upload-deadlines-v1", "bounded-probe-v1"]},
             "Candidate receiver capability check failed")
 
 

@@ -15,9 +15,10 @@ import time
 
 CONTROL_TIMEOUT = 960
 UPLOAD_TIMEOUT = 3900
-PHASES = {"receive", "archive", "image", "normalize", "stored"}
+PHASES = {"receive", "archive", "image", "normalize", "stored", "probe_receive", "probe_download", "probe_upload"}
 ERROR_CODES = {"transfer_idle", "transfer_timeout", "processing_timeout",
-               "receiver_error", "prior_state_restored"}
+               "receiver_error", "prior_state_restored", "probe_timeout", "probe_idle", "probe_network",
+               "probe_auth", "probe_http", "probe_integrity", "probe_io", "probe_cleanup", "probe_boundary", "probe_pending", "probe_cancelled"}
 
 
 def require_capabilities(value):
