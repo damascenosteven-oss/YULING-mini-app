@@ -14,6 +14,7 @@ import re
 import shutil
 import tarfile
 import tempfile
+import time
 
 ENGINE = "be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192"
 APPLICATION = "yuling-ppt-test"
@@ -24,10 +25,93 @@ MAX_UPLOAD = 2 * 1024**3
 MAX_IMAGE = 4 * 1024**3
 MIN_DISK = 8 * 1024**3
 RID = re.compile(r"[0-9a-f]{12}-[0-9]{1,20}-[0-9]{1,3}")
+RECEIVER_VERSION = 2
+CAPABILITIES = ["upload-progress-v1", "phased-upload-deadlines-v1"]
+TRANSFER_SECONDS = 2700
+IDLE_SECONDS = 120
+PROCESSING_SECONDS = 900
+PROGRESS_SECONDS = 10
 
 
 class ReleaseError(RuntimeError):
     pass
+
+
+class UploadDeadline(ReleaseError):
+    def __init__(self, code, progress):
+        self.detail = {"status": "failed", "code": code, **progress.snapshot()}
+        super().__init__(code + " " + json.dumps(progress.snapshot()))
+
+
+class UploadProgress:
+    """Server-owned budgets; request data cannot change these deadlines."""
+    def __init__(self, total, clock=None):
+        self.clock = clock or time.monotonic
+        self.start = self.last_data = self.clock()
+        self.processing = None
+        self.stage = "receive"
+        self.count = 0
+        self.total = total
+        self.last_report = self.start
+        self.armed = False
+
+    def snapshot(self):
+        return {"phase": self.stage, "received": self.count, "total": self.total,
+                "elapsed": round(self.clock() - self.start, 3)}
+
+    def emit(self):
+        print(json.dumps({"event": "progress", **self.snapshot()}), file=sys.stderr, flush=True)
+        self.last_report = self.clock()
+
+    def check(self):
+        now = self.clock()
+        if self.processing is None:
+            if now - self.start >= TRANSFER_SECONDS:
+                raise UploadDeadline("transfer_timeout", self)
+            if now - self.last_data >= IDLE_SECONDS:
+                raise UploadDeadline("transfer_idle", self)
+        elif now - self.processing >= PROCESSING_SECONDS:
+            raise UploadDeadline("processing_timeout", self)
+
+    def received(self, amount):
+        self.count += amount
+        self.last_data = self.clock()
+        self.check()
+        if self.clock() - self.last_report >= PROGRESS_SECONDS:
+            self.emit()
+
+    def phase(self, stage):
+        require(stage in {"archive", "image", "normalize", "stored"}, "Invalid internal phase")
+        if self.processing is None:
+            self.processing = self.clock()
+        self.stage = stage
+        self.check()
+        self.emit()
+
+    def tick(self, *_):
+        self.check()
+        self.emit()
+        self.arm()
+
+    def arm(self):
+        now = self.clock()
+        end = (min(self.start + TRANSFER_SECONDS, self.last_data + IDLE_SECONDS)
+               if self.processing is None else self.processing + PROCESSING_SECONDS)
+        signal.setitimer(signal.ITIMER_REAL, max(.001, min(PROGRESS_SECONDS, end - now)))
+
+    def __enter__(self):
+        self.emit()
+        if hasattr(signal, "setitimer"):
+            self.previous = signal.getsignal(signal.SIGALRM)
+            signal.signal(signal.SIGALRM, self.tick)
+            self.armed = True
+            self.arm()
+        return self
+
+    def __exit__(self, *_):
+        if self.armed:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, self.previous)
 
 
 def require(condition, message):
@@ -329,39 +413,45 @@ class Controller:
         require(shutil.disk_usage(self.root).free >= MIN_DISK + size, "Insufficient upload disk space")
         temporary = Path(tempfile.mkdtemp(prefix="upload-", dir=self.incoming))
         try:
-            payload = temporary / "bundle.tar"
-            with payload.open("wb") as target:
-                remaining = size
-                while remaining:
-                    chunk = stream.read(min(1024 * 1024, remaining))
-                    require(chunk, "Truncated upload")
-                    target.write(chunk)
-                    remaining -= len(chunk)
-            require(not stream.read(1), "Unexpected trailing upload data")
-            require(digest_file(payload) == expected, "Upload checksum mismatch")
-            destination = self.releases / release
-            require(not destination.is_symlink(), "Unsafe release destination")
-            if destination.exists():
-                require(read_json(destination / "receipt.json")["sha256"] == expected,
-                        "Release already exists with different content")
-                return {"status": "stored", "release": release, "idempotent": True}
-            with tarfile.open(payload, "r:") as archive:
-                files = members(archive, MAX_UPLOAD)
-                require(set(files) == {"release.json", "image.tar.gz"}, "Unexpected bundle members")
-                manifest = tar_json(archive, files["release.json"])
-                validate_manifest(manifest, release)
-                compressed = temporary / "image.tar.gz"
-                with archive.extractfile(files["image.tar.gz"]) as source, compressed.open("wb") as target:
-                    shutil.copyfileobj(source, target, 1024 * 1024)
-            require(digest_file(compressed) == manifest["image_sha256"], "Image archive checksum mismatch")
-            normalize_image(compressed, temporary / "image.tar", manifest)
-            payload.unlink()
-            compressed.unlink()
-            write_json(temporary / "release.json", manifest)
-            write_json(temporary / "receipt.json", {"sha256": expected, "bytes": size,
-                       "normalized_sha256": digest_file(temporary / "image.tar")})
-            os.rename(temporary, destination)
-            return {"status": "stored", "release": release, "idempotent": False}
+            with UploadProgress(size) as progress:
+                payload = temporary / "bundle.tar"
+                with payload.open("wb") as target:
+                    remaining = size
+                    while remaining:
+                        chunk = getattr(stream, "read1", stream.read)(min(1024 * 1024, remaining))
+                        require(chunk, "Truncated upload")
+                        target.write(chunk)
+                        remaining -= len(chunk)
+                        progress.received(len(chunk))
+                require(not stream.read(1), "Unexpected trailing upload data")
+                progress.phase("archive")
+                require(digest_file(payload) == expected, "Upload checksum mismatch")
+                destination = self.releases / release
+                require(not destination.is_symlink(), "Unsafe release destination")
+                if destination.exists():
+                    require(read_json(destination / "receipt.json")["sha256"] == expected,
+                            "Release already exists with different content")
+                    return {"status": "stored", "release": release, "idempotent": True}
+                with tarfile.open(payload, "r:") as archive:
+                    files = members(archive, MAX_UPLOAD)
+                    require(set(files) == {"release.json", "image.tar.gz"}, "Unexpected bundle members")
+                    manifest = tar_json(archive, files["release.json"])
+                    validate_manifest(manifest, release)
+                    compressed = temporary / "image.tar.gz"
+                    with archive.extractfile(files["image.tar.gz"]) as source, compressed.open("wb") as target:
+                        shutil.copyfileobj(source, target, 1024 * 1024)
+                progress.phase("image")
+                require(digest_file(compressed) == manifest["image_sha256"], "Image archive checksum mismatch")
+                progress.phase("normalize")
+                normalize_image(compressed, temporary / "image.tar", manifest)
+                payload.unlink()
+                compressed.unlink()
+                write_json(temporary / "release.json", manifest)
+                write_json(temporary / "receipt.json", {"sha256": expected, "bytes": size,
+                           "normalized_sha256": digest_file(temporary / "image.tar")})
+                os.rename(temporary, destination)
+                progress.phase("stored")
+                return {"status": "stored", "release": release, "idempotent": False}
         except (tarfile.TarError, EOFError, OSError, ValueError, KeyError, TypeError) as error:
             raise ReleaseError("Malformed or unreadable release bundle") from error
         finally:
@@ -476,7 +566,7 @@ def dispatch(controller, stream):
     require(not stream.read(1), "Unexpected trailing request data")
     if operation == "status":
         require(set(request) == {"op"}, "Invalid status fields")
-        return controller.state()
+        return {**controller.state(), "receiver_version": RECEIVER_VERSION, "capabilities": CAPABILITIES}
     if operation == "deploy":
         require(set(request) == {"op", "release"}, "Invalid deploy fields")
         return controller.install(request["release"])
@@ -494,6 +584,9 @@ def secure_file(path):
 
 
 def main():
+    if sys.argv[1:] == ["--self-check"]:
+        print(json.dumps({"receiver_version": RECEIVER_VERSION, "capabilities": CAPABILITIES}), flush=True)
+        return
     require(os.geteuid() == 0 and len(sys.argv) == 1, "Use the installed restricted receiver")
     import fcntl
     secure_file(CONFIG)
@@ -514,7 +607,7 @@ def main():
         result = dispatch(controller, sys.stdin.buffer)
         if result.get("status") == "published":
             result["retained_for_owner_review"] = controller.cleanup()
-        print(json.dumps(result))
+        print(json.dumps(result), flush=True)
         signal.alarm(0)
 
 
@@ -523,6 +616,9 @@ if __name__ == "__main__":
         main()
     except (ReleaseError, OSError, ValueError, KeyError, TypeError) as error:
         # Request/host errors are useful; avoid dumping tracebacks or environment data.
-        print(json.dumps({"status": "failed", "error": str(error) if isinstance(error, ReleaseError)
-                          else "Invalid host state; owner inspection required"}), file=sys.stderr)
+        detail = (error.detail if isinstance(error, UploadDeadline) else {
+            "status": "failed", "code": "prior_state_restored" if "restored" in str(error)
+            else "receiver_error", "error": str(error) if isinstance(error, ReleaseError)
+            else "Invalid host state; owner inspection required"})
+        print(json.dumps(detail), file=sys.stderr, flush=True)
         sys.exit(1)

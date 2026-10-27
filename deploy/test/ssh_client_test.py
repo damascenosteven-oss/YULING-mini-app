@@ -4,6 +4,8 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch, Mock
 
@@ -14,24 +16,23 @@ spec.loader.exec_module(client)
 
 class ClientBoundary(unittest.TestCase):
     def test_receiver_failure_is_not_reported_as_success(self):
-        result = subprocess.CompletedProcess([], 1, b"", b'{"status":"failed","error":"prior state restored"}')
-        with patch.object(client.subprocess, "run", return_value=result):
-            with self.assertRaisesRegex(RuntimeError, "restored"):
-                client.request(["ssh"], {"op": "rollback"})
+        code = "import sys; sys.stdin.buffer.read(); print('{\"status\":\"failed\",\"code\":\"prior_state_restored\"}',file=sys.stderr); sys.exit(1)"
+        with self.assertRaisesRegex(RuntimeError, "restored"):
+            client.request([sys.executable, "-c", code], {"op": "rollback"})
 
     def test_ssh_failure_does_not_echo_banner_or_secret(self):
-        result = subprocess.CompletedProcess([], 255, b"", b"untrusted banner")
-        with patch.object(client.subprocess, "run", return_value=result):
-            with self.assertRaisesRegex(RuntimeError, "SSH/receiver") as raised:
-                client.request(["ssh"], {"op": "status"})
-            self.assertNotIn("untrusted", str(raised.exception))
+        code = "import sys; sys.stdin.buffer.read(); print('untrusted banner',file=sys.stderr); sys.exit(255)"
+        with self.assertRaisesRegex(RuntimeError, "SSH/receiver") as raised:
+            client.request([sys.executable, "-c", code], {"op": "status"})
+        self.assertNotIn("untrusted", str(raised.exception))
 
     def test_request_stream_contains_exact_header_and_binary(self):
-        def fake_run(command, **kwargs):
-            self.assertEqual(kwargs["stdin"].read(), b'{"op": "status"}\n')
-            return subprocess.CompletedProcess([], 0, b'{"current":null}', b"")
-        with patch.object(client.subprocess, "run", side_effect=fake_run), patch("sys.stdout", new=io.StringIO()):
-            self.assertEqual(client.request(["ssh"], {"op": "status"}), {"current": None})
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp) / "bundle"
+            bundle.write_bytes(bytes(range(256)))
+            code = "import sys,json; assert sys.stdin.buffer.read()==b'{\"op\": \"upload\"}\\n'+bytes(range(256)); print('{\"status\":\"stored\"}')"
+            with patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(client.request([sys.executable, "-c", code], {"op": "upload"}, bundle), {"status": "stored"})
 
     def test_public_port_reachable_is_rejected(self):
         connection = Mock()

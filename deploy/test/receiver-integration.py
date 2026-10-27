@@ -15,6 +15,7 @@ import tarfile
 import tempfile
 import time
 import uuid
+from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parents[2]
 APP = "yuling-ppt-test"
@@ -94,6 +95,15 @@ def main():
     spec = importlib.util.spec_from_file_location("client", HERE / "deploy/test/ssh-client.py")
     client = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(client)
+    # Capture full structured failures only in this credential-free fixture.
+    # Production client logs remain restricted to codes and progress fields.
+    failures = []
+    def record_failure(data, *args, **kwargs):
+        value = json.loads(data, *args, **kwargs)
+        if isinstance(value, dict) and value.get("status") == "failed":
+            failures.append(value)
+        return value
+    client.json = SimpleNamespace(loads=record_failure, dumps=json.dumps)
     try:
         run("docker", "build", "--pull=false", "-f", HERE / "deploy/test/receiver-fixture.Dockerfile",
             "-t", host_image, HERE)
@@ -134,6 +144,10 @@ f=p/'authorized_keys';f.write_text('restrict,command="sudo -n /usr/bin/python3 -
                 raise AssertionError("Mismatched host key was accepted")
             known.write_text(correct)
             assert client.request(ssh, {"op": "status"})["current"] is None
+            transfer_spec = importlib.util.spec_from_file_location("transfer_entry", HERE / "deploy/test/transfer-entry-checks.py")
+            transfer = importlib.util.module_from_spec(transfer_spec)
+            transfer_spec.loader.exec_module(transfer)
+            transfer.checks(run, host, ssh, client, output)
             for index, letter in enumerate(("a", "b", "c")):
                 rid, tag, bundle = fixture(output, letter, failed=letter == "c")
                 tags.append(tag)
@@ -166,6 +180,7 @@ f=p/'authorized_keys';f.write_text('restrict,command="sudo -n /usr/bin/python3 -
                 "app_fixture_only": True, "real_server_tested": False, "rollback": result}, indent=2))
             print("PASS: actual SSH upload, publish, failed-start recovery, rollback and forced-command restriction", flush=True)
     except Exception:
+        (output / "fixture-receiver-errors.json").write_text(json.dumps(failures, indent=2))
         # The fixture contains no real credentials. Preserve failure diagnostics
         # before cleanup; production receiver intentionally suppresses Docker stderr.
         diagnostics = subprocess.run(["docker", "exec", host, "cat", "/tmp/docker-fixture-errors"], capture_output=True)

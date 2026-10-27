@@ -2,12 +2,123 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
 import socket
 import subprocess
 import tempfile
+import threading
+import queue
+import time
+
+CONTROL_TIMEOUT = 960
+UPLOAD_TIMEOUT = 3900
+PHASES = {"receive", "archive", "image", "normalize", "stored"}
+ERROR_CODES = {"transfer_idle", "transfer_timeout", "processing_timeout",
+               "receiver_error", "prior_state_restored"}
+
+
+def require_capabilities(value):
+    if (value.get("receiver_version") != 2 or not isinstance(value.get("capabilities"), list) or
+            not {"upload-progress-v1", "phased-upload-deadlines-v1"}.issubset(
+                value.get("capabilities", []))):
+        raise RuntimeError("Receiver upgrade required before publish")
+
+
+def progress_fields(value):
+    if value.get("phase") not in PHASES:
+        return {}
+    fields = {key: value.get(key) for key in ("received", "total", "elapsed")}
+    if not all(type(n) in (int, float) and 0 <= n <= 2 * 1024**3 and math.isfinite(n) for n in fields.values()):
+        return {}
+    if fields["received"] > fields["total"] or fields["total"] > 2 * 1024**3:
+        return {}
+    return {"phase": value["phase"], **fields}
+
+
+def read_pipe(stream, channel, events, stopped):
+    try:
+        while line := stream.readline(65537):
+            while not stopped.is_set():
+                try:
+                    events.put((channel, line), timeout=.1)
+                    break
+                except queue.Full:
+                    continue
+            if stopped.is_set():
+                return
+    finally:
+        stream.close()
+        while not stopped.is_set():
+            try:
+                events.put((channel, None), timeout=.1)
+                break
+            except queue.Full:
+                continue
+
+
+def run_request(command, payload, timeout):
+    events, stopped = queue.Queue(maxsize=32), threading.Event()
+    process = subprocess.Popen(command, stdin=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    readers = [threading.Thread(target=read_pipe, args=(stream, name, events, stopped), daemon=True)
+               for stream, name in ((process.stdout, "out"), (process.stderr, "err"))]
+    for reader in readers:
+        reader.start()
+    end = time.monotonic() + timeout
+    output, closed, failure = bytearray(), set(), None
+    latest = {"phase": "awaiting_receiver", "received": None, "total": None}
+    try:
+        while len(closed) < 2 or process.poll() is None:
+            if time.monotonic() >= end:
+                raise RuntimeError("client_timeout " + json.dumps(latest))
+            try:
+                channel, line = events.get(timeout=min(.1, max(.001, end - time.monotonic())))
+            except queue.Empty:
+                continue
+            if line is None:
+                closed.add(channel)
+                continue
+            if len(line) > 65536:
+                raise RuntimeError("Receiver response exceeds limit")
+            if channel == "out":
+                output.extend(line)
+                if len(output) > 65536:
+                    raise RuntimeError("Receiver response exceeds limit")
+                continue
+            try:
+                value = json.loads(line)
+            except (ValueError, UnicodeError):
+                continue
+            if not isinstance(value, dict):
+                continue
+            fields = progress_fields(value)
+            if fields and value.get("event") == "progress":
+                latest = fields
+                print(json.dumps({"event": "progress", **fields}), flush=True)
+            if value.get("status") == "failed" and value.get("code") in ERROR_CODES:
+                failure = {"code": value["code"], **fields}
+        if process.wait() != 0:
+            raise RuntimeError(json.dumps(failure) if failure else
+                               "SSH/receiver failed; verify connectivity and receiver installation")
+        if failure:
+            raise RuntimeError(json.dumps(failure))
+        try:
+            value = json.loads(output)
+        except (ValueError, UnicodeError) as error:
+            raise RuntimeError("Unexpected receiver response") from error
+        if not isinstance(value, dict) or value.get("status") == "failed":
+            raise RuntimeError("Unexpected receiver response")
+        print(json.dumps(value), flush=True)
+        return value
+    finally:
+        stopped.set()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        for reader in readers:
+            reader.join(timeout=2)
 
 
 def external_port_closed(host):
@@ -30,20 +141,7 @@ def request(command, header, bundle=None):
                 while chunk := source.read(1024 * 1024):
                     payload.write(chunk)
         payload.seek(0)
-        result = subprocess.run(command, stdin=payload, capture_output=True, timeout=960)
-    if result.returncode:
-        # Receiver errors contain no environment, but do not echo arbitrary SSH banners.
-        try:
-            detail = json.loads(result.stderr)
-            reason = detail.get("error", "Remote operation failed")
-        except (ValueError, UnicodeError):
-            reason = "SSH/receiver failed; verify host key, connectivity and bootstrap installation"
-        raise RuntimeError(reason)
-    value = json.loads(result.stdout)
-    if not isinstance(value, dict) or value.get("status") == "failed":
-        raise RuntimeError("Unexpected receiver response")
-    print(json.dumps(value))
-    return value
+        return run_request(command, payload, UPLOAD_TIMEOUT if header.get("op") == "upload" else CONTROL_TIMEOUT)
 
 
 def main():
@@ -70,9 +168,10 @@ def main():
                    "-o", "UserKnownHostsFile=" + str(known), "-o", "GlobalKnownHostsFile=/dev/null",
                    "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
                    "yuling-ppt-deploy@" + host]
-        request(command, {"op": "status"})
+        status = request(command, {"op": "status"})
         if args.operation == "status":
             return
+        require_capabilities(status)
         external_port_closed(host)
         if args.operation == "publish":
             if args.bundle is None:
