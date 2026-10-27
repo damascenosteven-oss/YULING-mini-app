@@ -41,6 +41,14 @@
         "adr": "docs/adr/0006-bounded-transfer-probe.md",
         "plan_sha256": "a72666c5f52a14db0dfb2809a4090857c2818a081c91923936cf35cf53cb0068",
         "adr_sha256": "baa5c01087adeb4bd620f624a81c8ee2742db805c19d3cbffc696a6738b1f3e7"
+      },
+      "16": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/16",
+        "approval_source": "Owner explicitly approved the mobile-triggered local-build/direct-SSH release plan on 2026-10-27. Git-tracked implementation, tests, Issue-branch push and PR are authorized; owner retains merge, phone-triggered publish and business acceptance.",
+        "plan": "docs/plans/issue-16-local-release-bridge.md",
+        "adr": "docs/adr/0007-local-release-bridge.md",
+        "plan_sha256": "b1d1c0de74485e7c74a2da5756f50d33af0d950d81c0374e4bdf5f1adc2eee2e",
+        "adr_sha256": "2e5ef90c6b48135d94624683a0ced7935b582b2106658c336aa96484491329ef"
       }
     }
   }
