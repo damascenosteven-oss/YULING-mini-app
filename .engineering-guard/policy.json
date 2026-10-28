@@ -57,6 +57,14 @@
         "plan_sha256": "7d39826cc929b66f383083c2ad133559cbfe7cfcb544da83c64fe961ed25ada7",
         "adr": "docs/adr/0008-source-cache-for-phone-release.md",
         "adr_sha256": "3816887f966ed3e5b57688e73dd5b737c8eb311a31a80ff6140f68710b8a9f4f"
+      },
+      "20": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/20",
+        "approval_source": "Owner explicitly approved the pinned runtime cache and relay failure-isolation plan on 2026-10-28, then created Issue 20. Code, tests, Issue branch push and review PR are authorized; owner retains merge and phone-triggered publish.",
+        "plan": "docs/plans/issue-20-runtime-cache.md",
+        "plan_sha256": "df534c8d0b239c2774301cd7837fe552e23894bc2a78d0d7a06aa596fa2cfcf6",
+        "adr": "docs/adr/0009-verified-runtime-cache.md",
+        "adr_sha256": "e02512eae52978574e3bc24657cefd0f732e14ae0e01d7fa9c695bbbb190cd74"
       }
     }
   }

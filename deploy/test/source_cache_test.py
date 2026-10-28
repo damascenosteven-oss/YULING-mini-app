@@ -174,10 +174,15 @@ class SourceCacheTests(unittest.TestCase):
                                             "conclusion": "success", "id": number}
                                            for number, name in enumerate(("app-checks", "release-checks"), 1)]}
                 raise AssertionError(route)
+        commands = []
         with patch.object(self.bridge, "prepare_sources", return_value=self.cache) as prepare, \
-                patch.object(self.bridge, "run", side_effect=AssertionError("server or build called")):
+                patch.object(self.bridge, "run", side_effect=lambda *args, **kwargs: commands.append(args)):
             self.bridge.warm_cache(API(), self.root)
         self.assertEqual(prepare.call_args.args[:2], (self.root, sha))
+        self.assertEqual(len(commands), 1)
+        self.assertIn("--prepare-only", commands[0])
+        self.assertIn("--runtime-cache", commands[0])
+        self.assertNotIn("--runtime-offline", commands[0])
 
 
 if __name__ == "__main__":

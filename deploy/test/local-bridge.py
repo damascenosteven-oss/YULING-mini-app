@@ -238,15 +238,21 @@ def prepare_sources(state_dir, sha, checkout):
     return engine
 
 
-def warm_cache(api, state_dir):
+def warm_cache(api, state_dir, seed_dir=None):
     branch = api.call("/branches/main")
     sha = branch.get("commit", {}).get("sha")
     if branch.get("protected") is not True or not isinstance(sha, str) or not SHA.fullmatch(sha):
         raise ValueError("protected main is unavailable")
     require_checks(api.call(f"/commits/{sha}/check-runs?per_page=100"), sha)
     with tempfile.TemporaryDirectory(prefix="yuling-source-warm-") as directory:
-        prepare_sources(state_dir, sha, Path(directory) / "app")
-    print("Verified source cache ready for main " + sha, flush=True)
+        checkout = Path(directory) / "app"
+        engine = prepare_sources(state_dir, sha, checkout)
+        command = [sys.executable, checkout / "deploy/test/build-image.py", "--output", Path(directory) / "output",
+                   "--engine", engine, "--runtime-cache", state_dir / "runtime-cache", "--prepare-only"]
+        if seed_dir is not None:
+            command.extend(("--runtime-seed-dir", seed_dir))
+        run(*command)
+    print("Verified source and pinned runtime caches ready for main " + sha, flush=True)
 
 
 def build_and_transfer(api, deployment, operation, config):
@@ -266,7 +272,8 @@ def build_and_transfer(api, deployment, operation, config):
                                   "GITHUB_RUN_ATTEMPT": str(deployment["payload"]["attempt"])})
                 step = "pinned_image_build"
                 run(sys.executable, checkout / "deploy/test/build-image.py", "--output", bundle_dir,
-                    "--engine", engine, env=clean_env)
+                    "--engine", engine, "--runtime-cache", Path(config["state_dir"]) / "runtime-cache",
+                    "--runtime-offline", env=clean_env)
                 step = "image_visual_checks"
                 run(sys.executable, checkout / "deploy/test/verify-image.py", "--build-output", bundle_dir, env=clean_env)
                 step = "bundle_digest"
@@ -344,11 +351,29 @@ def poll_once(api, config, state_dir):
             handle(api, deployment, config, state_dir)
 
 
+def poll_continuously(api, config, state_dir, once=False):
+    while True:
+        try:
+            poll_once(api, config, state_dir)
+        except StepFailure as error:
+            print("Request failed at " + error.step + "; relay remains available", flush=True)
+            if once:
+                raise
+        except (urllib.error.URLError, OSError, ValueError) as error:
+            print("Relay stopped this poll: " + type(error).__name__, flush=True)
+            if once:
+                raise
+        if once:
+            return
+        time.sleep(15)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--warm-cache", action="store_true")
+    parser.add_argument("--runtime-seed-dir", type=Path)
     args = parser.parse_args()
     config_path = args.config.resolve()
     if config_path.stat().st_mode & 0o077:
@@ -365,18 +390,13 @@ def main():
         raise ValueError("state directory must have mode 0700")
     api = GitHub(secret(Path(config["token_file"])))
     if args.warm_cache:
-        warm_cache(api, state_dir)
+        warm_cache(api, state_dir, args.runtime_seed_dir)
         return
-    while True:
-        try:
-            poll_once(api, config, state_dir)
-        except (urllib.error.URLError, OSError, ValueError) as error:
-            print("Relay stopped this poll: " + type(error).__name__, flush=True)
-            if args.once:
-                raise
-        if args.once:
-            return
-        time.sleep(15)
+    if args.runtime_seed_dir is not None:
+        raise ValueError("Runtime seed is only accepted with --warm-cache")
+    secret(Path(config["ssh_key"]))
+    secret(Path(config["known_hosts"]))
+    poll_continuously(api, config, state_dir, args.once)
 
 
 if __name__ == "__main__":

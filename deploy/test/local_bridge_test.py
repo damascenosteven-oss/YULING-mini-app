@@ -96,6 +96,8 @@ class ContractTests(unittest.TestCase):
         stages = []
         def fake_run(*args, env=None):
             if len(args) > 1 and str(args[1]).endswith("build-image.py"):
+                self.assertIn("--runtime-cache", args)
+                self.assertIn("--runtime-offline", args)
                 output = Path(args[args.index("--output") + 1])
                 output.mkdir()
                 (output / "bundle.tar").write_bytes(b"verified fixture")
@@ -193,6 +195,41 @@ class ContractTests(unittest.TestCase):
                 bridge.build_and_transfer(object(), deployment, "publish", {"state_dir": "/fixture-state"})
         self.assertEqual(raised.exception.step, "checkout")
         self.assertEqual(commands, [])
+
+    def test_relay_continues_after_one_failed_request_without_retrying_it(self):
+        bridge = load("local-bridge")
+        first = {"id": 101, "sha": "a" * 40, "payload": {"operation": "publish"}}
+        second = {"id": 102, "sha": "b" * 40, "payload": {"operation": "publish"}}
+        class API:
+            def __init__(self):
+                self.poll = 0
+                self.states = {}
+            def call(self, route, data=None):
+                if route.startswith("/deployments?"):
+                    self.poll += 1
+                    return [first] if self.poll == 1 else [first, second]
+                if route.endswith("/statuses?per_page=1"):
+                    identity = int(route.split("/")[2])
+                    return [{"state": self.states.get(identity, "pending")}]
+                if route.endswith("/statuses"):
+                    identity = int(route.split("/")[2])
+                    self.states[identity] = data["state"]
+                    return {}
+                raise AssertionError(route)
+        api = API()
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(bridge, "checked_request", return_value="publish"), \
+                patch.object(bridge, "build_and_transfer",
+                             side_effect=[bridge.StepFailure("pinned_image_build"), None]) as build:
+            def pause(_):
+                if api.poll == 2:
+                    raise StopIteration
+            with patch.object(bridge.time, "sleep", side_effect=pause):
+                with self.assertRaises(StopIteration):
+                    bridge.poll_continuously(api, {}, Path(tmp))
+            calls.extend((build.call_count, api.states[101], api.states[102]))
+        self.assertEqual(calls, [2, "failure", "success"])
 
 
 if __name__ == "__main__":
