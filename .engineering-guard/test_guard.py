@@ -110,7 +110,7 @@ class GuardEntries(unittest.TestCase):
         policy = json.loads(POLICY.read_text(encoding="utf-8"))
         self.assertEqual(hashlib.sha256(CHECKER.read_bytes()).hexdigest(), policy["checker_sha256"])
         self.assertEqual(policy["lifecycle"]["effective_at"], "2026-10-22T04:50:03.733426+00:00")
-        self.assertEqual(set(policy["lifecycle"]["issues"]), {"8", "9", "12", "14", "16", "18"})
+        self.assertEqual(set(policy["lifecycle"]["issues"]), {"8", "9", "12", "14", "16", "18", "20"})
         self.assertEqual(policy["lifecycle"]["grandfathered"], {})
 
     def test_accepted_stage_commit_and_push_entry_pass(self):
@@ -213,6 +213,26 @@ class GuardEntries(unittest.TestCase):
                       "PR must close the same Issue")
         value = json.loads(event.read_text())
         value["pull_request"]["body"] = "Closes #18"
+        event.write_text(json.dumps(value), encoding="utf-8")
+        self.assertEqual(f.guard("ci", "--policy", f.policy_file, "--file", event).returncode, 0)
+        self.assertEqual(f.push(f.branch).returncode, 0)
+
+    def test_issue_20_real_entries_require_matching_approved_source(self):
+        f = self.fixture(issue="20")
+        name = f.policy["lifecycle"]["issues"]["20"]["plan"]
+        file = f.repo / name
+        accepted = file.read_bytes()
+        file.write_bytes(accepted.replace(b"status: accepted", b"status: proposed"))
+        f.git("add", name)
+        file.write_bytes(accepted)
+        self.rejected(f.precommit(), "plan/base mismatch")
+        f.git("add", name)
+        self.assertEqual(f.precommit().returncode, 0)
+        event = f.event("Closes #18")
+        self.rejected(f.guard("ci", "--policy", f.policy_file, "--file", event, check=False),
+                      "PR must close the same Issue")
+        value = json.loads(event.read_text())
+        value["pull_request"]["body"] = "Closes #20"
         event.write_text(json.dumps(value), encoding="utf-8")
         self.assertEqual(f.guard("ci", "--policy", f.policy_file, "--file", event).returncode, 0)
         self.assertEqual(f.push(f.branch).returncode, 0)
