@@ -248,11 +248,12 @@ def warm_cache(api, state_dir, seed_dir=None):
         checkout = Path(directory) / "app"
         engine = prepare_sources(state_dir, sha, checkout)
         command = [sys.executable, checkout / "deploy/test/build-image.py", "--output", Path(directory) / "output",
-                   "--engine", engine, "--runtime-cache", state_dir / "runtime-cache", "--prepare-only"]
+                   "--engine", engine, "--runtime-cache", state_dir / "runtime-cache",
+                   "--dependency-cache", state_dir / "dependency-cache", "--prepare-only"]
         if seed_dir is not None:
             command.extend(("--runtime-seed-dir", seed_dir))
         run(*command)
-    print("Verified source and pinned runtime caches ready for main " + sha, flush=True)
+    print("Verified source, pinned runtime and dependency caches ready for main " + sha, flush=True)
 
 
 def build_and_transfer(api, deployment, operation, config):
@@ -273,7 +274,8 @@ def build_and_transfer(api, deployment, operation, config):
                 step = "pinned_image_build"
                 run(sys.executable, checkout / "deploy/test/build-image.py", "--output", bundle_dir,
                     "--engine", engine, "--runtime-cache", Path(config["state_dir"]) / "runtime-cache",
-                    "--runtime-offline", env=clean_env)
+                    "--runtime-offline", "--dependency-cache", Path(config["state_dir"]) / "dependency-cache",
+                    "--dependency-offline", env=clean_env)
                 step = "image_visual_checks"
                 run(sys.executable, checkout / "deploy/test/verify-image.py", "--build-output", bundle_dir, env=clean_env)
                 step = "bundle_digest"
