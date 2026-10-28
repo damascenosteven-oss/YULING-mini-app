@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,9 @@ ENVIRONMENT = "ppt-test-local-relay"
 # merged main SHA has its own app and release checks but no PR check run.
 CHECKS = {"app-checks", "release-checks"}
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+APP_SOURCE = f"https://github.com/{OWNER}/{REPO}.git"
+ENGINE_SOURCE = "https://github.com/YuLing-Ai-Tech/yuling-ai-ppt.git"
+ENGINE_SHA = "be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192"
 
 
 class StepFailure(RuntimeError):
@@ -124,6 +128,127 @@ def run(*command, env=None):
     subprocess.run([str(arg) for arg in command], check=True, env=env)
 
 
+def git_value(*args):
+    return subprocess.check_output(["git", *map(str, args)], text=True,
+                                   stderr=subprocess.DEVNULL).strip()
+
+
+def fetch_source(cache, sha):
+    subprocess.run(["git", "-C", str(cache), "fetch", "--no-tags", "origin", sha],
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                   timeout=90)
+
+
+def verify_source(cache, source, sha):
+    if cache.is_symlink() or not cache.is_dir():
+        raise ValueError("source cache is not a regular repository")
+    try:
+        if (git_value("-C", cache, "rev-parse", "--is-bare-repository") != "true" or
+                git_value("-C", cache, "remote", "get-url", "origin") != source):
+            raise ValueError("source cache origin or shape mismatch")
+    except subprocess.CalledProcessError as error:
+        raise ValueError("source cache metadata invalid") from error
+    for setting in ("remote.origin.promisor", "extensions.partialClone"):
+        if subprocess.run(["git", "-C", str(cache), "config", "--get", setting],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+            raise ValueError("partial source cache is not accepted")
+    try:
+        subprocess.run(["git", "-C", str(cache), "fsck", "--full", "--no-reflogs"],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=90)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        raise ValueError("source cache object integrity failed") from error
+    try:
+        present = git_value("-C", cache, "rev-parse", "--verify", sha + "^{commit}") == sha
+    except subprocess.CalledProcessError:
+        return False
+    if not present:
+        return False
+    try:
+        subprocess.run(["git", "-C", str(cache), "fsck", "--full", "--no-reflogs", sha],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=90)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        raise ValueError("requested source commit is incomplete") from error
+    return True
+
+
+def ensure_cached_source(cache, source, sha):
+    if not SHA.fullmatch(sha):
+        raise ValueError("invalid source commit")
+    cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if cache.parent.is_symlink() or (os.name == "posix" and cache.parent.stat().st_mode & 0o077):
+        raise ValueError("source cache directory must have mode 0700")
+    lock = cache.with_name(cache.name + ".lock")
+    try:
+        descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError as error:
+        raise ValueError("source cache is already in use") from error
+    os.close(descriptor)
+    temporary = None
+    try:
+        if cache.exists() or cache.is_symlink():
+            if verify_source(cache, source, sha):
+                print("Verified source cache hit: " + cache.name, flush=True)
+                return cache
+            target = cache
+        else:
+            temporary = Path(tempfile.mkdtemp(prefix="source-", dir=cache.parent))
+            subprocess.run(["git", "init", "--bare", "-q", str(temporary)], check=True)
+            subprocess.run(["git", "-C", str(temporary), "remote", "add", "origin", source], check=True)
+            target = temporary
+        for attempt in range(3):
+            try:
+                print(f"Source fetch {cache.name}: attempt {attempt + 1}/3", flush=True)
+                fetch_source(target, sha)
+                break
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
+                print(f"Source fetch {cache.name}: {type(error).__name__}", flush=True)
+                if attempt == 2:
+                    raise
+                time.sleep((2, 5)[attempt])
+        if not verify_source(target, source, sha):
+            raise ValueError("fetched source commit is missing or damaged")
+        subprocess.run(["git", "-C", str(target), "update-ref", "refs/heads/pinned", sha], check=True)
+        if temporary is not None:
+            os.replace(temporary, cache)
+            temporary = None
+        return cache
+    finally:
+        if temporary is not None:
+            shutil.rmtree(temporary)
+        lock.unlink()
+
+
+def prepare_sources(state_dir, sha, checkout):
+    caches = state_dir / "source-cache"
+    app = ensure_cached_source(caches / "app.git", APP_SOURCE, sha)
+    subprocess.run(["git", "clone", "--no-local", "--no-checkout", "-q",
+                    str(app), str(checkout)], check=True, timeout=90)
+    subprocess.run(["git", "-C", str(checkout), "checkout", "--detach", "-q", sha],
+                   check=True, timeout=90)
+    if (git_value("-C", checkout, "rev-parse", "HEAD") != sha or
+            git_value("-C", checkout, "status", "--porcelain")):
+        raise ValueError("checkout is not the approved clean commit")
+    lock = json.loads((checkout / "deploy/test/runtime-lock.json").read_text())
+    engine_sha = lock["engine_sha"]
+    if engine_sha != ENGINE_SHA:
+        raise ValueError("engine lock differs from approved fixed commit")
+    engine = ensure_cached_source(caches / "engine.git", ENGINE_SOURCE, engine_sha)
+    return engine
+
+
+def warm_cache(api, state_dir):
+    branch = api.call("/branches/main")
+    sha = branch.get("commit", {}).get("sha")
+    if branch.get("protected") is not True or not isinstance(sha, str) or not SHA.fullmatch(sha):
+        raise ValueError("protected main is unavailable")
+    require_checks(api.call(f"/commits/{sha}/check-runs?per_page=100"), sha)
+    with tempfile.TemporaryDirectory(prefix="yuling-source-warm-") as directory:
+        prepare_sources(state_dir, sha, Path(directory) / "app")
+    print("Verified source cache ready for main " + sha, flush=True)
+
+
 def build_and_transfer(api, deployment, operation, config):
     sha = deployment["sha"]
     step = "checkout"
@@ -133,20 +258,15 @@ def build_and_transfer(api, deployment, operation, config):
             checkout = root / "app"
             bundle_dir = root / "output"
             if operation == "publish":
-                run("git", "clone", "--filter=blob:none", "--no-checkout",
-                    f"https://github.com/{OWNER}/{REPO}.git", checkout)
-                run("git", "-C", checkout, "fetch", "origin", sha)
-                run("git", "-C", checkout, "checkout", "--detach", sha)
-                actual = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
-                if actual != sha or subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"]).strip():
-                    raise ValueError("checkout is not the approved clean commit")
+                engine = prepare_sources(Path(config["state_dir"]), sha, checkout)
                 clean_env = {key: value for key, value in os.environ.items()
                              if key not in ("GH_DEPLOY_TOKEN", "DEPLOY_SSH_KEY", "SSH_KNOWN_HOSTS")}
                 clean_env.update({"GITHUB_SHA": sha, "GITHUB_REF": "refs/heads/main",
                                   "GITHUB_RUN_ID": str(deployment["payload"]["run_id"]),
                                   "GITHUB_RUN_ATTEMPT": str(deployment["payload"]["attempt"])})
                 step = "pinned_image_build"
-                run(sys.executable, checkout / "deploy/test/build-image.py", "--output", bundle_dir, env=clean_env)
+                run(sys.executable, checkout / "deploy/test/build-image.py", "--output", bundle_dir,
+                    "--engine", engine, env=clean_env)
                 step = "image_visual_checks"
                 run(sys.executable, checkout / "deploy/test/verify-image.py", "--build-output", bundle_dir, env=clean_env)
                 step = "bundle_digest"
@@ -228,6 +348,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--warm-cache", action="store_true")
     args = parser.parse_args()
     config_path = args.config.resolve()
     if config_path.stat().st_mode & 0o077:
@@ -243,6 +364,9 @@ def main():
     if state_dir.stat().st_mode & 0o077:
         raise ValueError("state directory must have mode 0700")
     api = GitHub(secret(Path(config["token_file"])))
+    if args.warm_cache:
+        warm_cache(api, state_dir)
+        return
     while True:
         try:
             poll_once(api, config, state_dir)

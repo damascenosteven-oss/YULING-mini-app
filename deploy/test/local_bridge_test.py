@@ -92,11 +92,11 @@ class ContractTests(unittest.TestCase):
         deployment = {"id": 8, "sha": "a" * 40,
                       "payload": {"run_id": 42, "attempt": 1}}
         config = {"host": "115.159.143.24", "ssh_key": "fixture",
-                  "known_hosts": "fixture"}
+                  "known_hosts": "fixture", "state_dir": "/fixture-state"}
         stages = []
         def fake_run(*args, env=None):
             if len(args) > 1 and str(args[1]).endswith("build-image.py"):
-                output = Path(args[-1])
+                output = Path(args[args.index("--output") + 1])
                 output.mkdir()
                 (output / "bundle.tar").write_bytes(b"verified fixture")
                 (output / "bundle.sha256").write_text(
@@ -105,7 +105,8 @@ class ContractTests(unittest.TestCase):
                 stages.append(args[args.index("--stage") + 1])
         def git_output(args, **kwargs):
             return "a" * 40 if args[-1] == "HEAD" else b""
-        with patch.object(bridge, "run", side_effect=fake_run), \
+        with patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
+                patch.object(bridge, "run", side_effect=fake_run), \
                 patch.object(bridge, "checked_request", side_effect=["publish", "publish"]) as checked, \
                 patch.object(bridge, "secret", return_value="fixture"), \
                 patch.object(bridge.subprocess, "check_output", side_effect=git_output):
@@ -134,7 +135,7 @@ class ContractTests(unittest.TestCase):
         stages = []
         def fake_run(*args, env=None):
             if len(args) > 1 and str(args[1]).endswith("build-image.py"):
-                output = Path(args[-1])
+                output = Path(args[args.index("--output") + 1])
                 output.mkdir()
                 (output / "bundle.tar").write_bytes(b"fixture")
                 (output / "bundle.sha256").write_text("0" * 64 + "  bundle.tar\n")
@@ -142,10 +143,11 @@ class ContractTests(unittest.TestCase):
                 stages.append(args[args.index("--stage") + 1])
         def git_output(args, **kwargs):
             return "a" * 40 if args[-1] == "HEAD" else b""
-        with patch.object(bridge, "run", side_effect=fake_run), \
+        with patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
+                patch.object(bridge, "run", side_effect=fake_run), \
                 patch.object(bridge.subprocess, "check_output", side_effect=git_output):
             with self.assertRaises(bridge.StepFailure) as raised:
-                bridge.build_and_transfer(object(), deployment, "publish", {})
+                bridge.build_and_transfer(object(), deployment, "publish", {"state_dir": "/fixture-state"})
         self.assertEqual(raised.exception.step, "bundle_digest")
         self.assertEqual(stages, [])
 
@@ -154,11 +156,11 @@ class ContractTests(unittest.TestCase):
         deployment = {"id": 8, "sha": "a" * 40,
                       "payload": {"run_id": 42, "attempt": 1}}
         config = {"host": "115.159.143.24", "ssh_key": "fixture",
-                  "known_hosts": "fixture"}
+                  "known_hosts": "fixture", "state_dir": "/fixture-state"}
         stages = []
         def fake_run(*args, env=None):
             if len(args) > 1 and str(args[1]).endswith("build-image.py"):
-                output = Path(args[-1])
+                output = Path(args[args.index("--output") + 1])
                 output.mkdir()
                 (output / "bundle.tar").write_bytes(b"fixture")
                 (output / "bundle.sha256").write_text(
@@ -170,7 +172,8 @@ class ContractTests(unittest.TestCase):
                     raise OSError("simulated interruption")
         def git_output(args, **kwargs):
             return "a" * 40 if args[-1] == "HEAD" else b""
-        with patch.object(bridge, "run", side_effect=fake_run), \
+        with patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
+                patch.object(bridge, "run", side_effect=fake_run), \
                 patch.object(bridge, "checked_request", return_value="publish"), \
                 patch.object(bridge, "secret", return_value="fixture"), \
                 patch.object(bridge.subprocess, "check_output", side_effect=git_output):
@@ -178,6 +181,18 @@ class ContractTests(unittest.TestCase):
                 bridge.build_and_transfer(object(), deployment, "publish", config)
         self.assertEqual(raised.exception.step, "restricted_upload")
         self.assertEqual(stages, ["upload"])
+
+    def test_source_failure_never_builds_uploads_or_activates(self):
+        bridge = load("local-bridge")
+        deployment = {"id": 8, "sha": "a" * 40,
+                      "payload": {"run_id": 42, "attempt": 1}}
+        commands = []
+        with patch.object(bridge, "prepare_sources", side_effect=OSError("source unavailable")), \
+                patch.object(bridge, "run", side_effect=lambda *args, **kwargs: commands.append(args)):
+            with self.assertRaises(bridge.StepFailure) as raised:
+                bridge.build_and_transfer(object(), deployment, "publish", {"state_dir": "/fixture-state"})
+        self.assertEqual(raised.exception.step, "checkout")
+        self.assertEqual(commands, [])
 
 
 if __name__ == "__main__":
