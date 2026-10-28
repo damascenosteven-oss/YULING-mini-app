@@ -176,6 +176,24 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(raised.exception.step, "bundle_digest")
         self.assertEqual(stages, [])
 
+    def test_offline_build_failure_never_uploads_or_activates(self):
+        bridge = load("local-bridge")
+        deployment = {"id": 8, "sha": "a" * 40,
+                      "payload": {"run_id": 42, "attempt": 1}}
+        commands = []
+        def fail_build(*args, env=None):
+            commands.append(args)
+            if str(args[1]).endswith("build-image.py"):
+                self.assertIn("--dependency-offline", args)
+                raise RuntimeError("simulated missing dependency cache")
+            raise AssertionError("A failed build must not start SSH transfer")
+        with patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
+                patch.object(bridge, "run", side_effect=fail_build):
+            with self.assertRaises(bridge.StepFailure) as raised:
+                bridge.build_and_transfer(object(), deployment, "publish", {"state_dir": "/fixture-state"})
+        self.assertEqual(raised.exception.step, "pinned_image_build")
+        self.assertEqual(len(commands), 1)
+
     def test_upload_failure_never_activates(self):
         bridge = load("local-bridge")
         deployment = {"id": 8, "sha": "a" * 40,
