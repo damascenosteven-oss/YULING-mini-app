@@ -49,6 +49,14 @@
         "adr": "docs/adr/0007-local-release-bridge.md",
         "plan_sha256": "b1d1c0de74485e7c74a2da5756f50d33af0d950d81c0374e4bdf5f1adc2eee2e",
         "adr_sha256": "2e5ef90c6b48135d94624683a0ced7935b582b2106658c336aa96484491329ef"
+      },
+      "18": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/18",
+        "approval_source": "Owner explicitly approved the verified-source-cache and bounded Git retrieval plan on 2026-10-28. Code, tests, Issue-branch push and PR are authorized; owner retains merge and phone-triggered publish.",
+        "plan": "docs/plans/issue-18-source-cache.md",
+        "plan_sha256": "7d39826cc929b66f383083c2ad133559cbfe7cfcb544da83c64fe961ed25ada7",
+        "adr": "docs/adr/0008-source-cache-for-phone-release.md",
+        "adr_sha256": "3816887f966ed3e5b57688e73dd5b737c8eb311a31a80ff6140f68710b8a9f4f"
       }
     }
   }
