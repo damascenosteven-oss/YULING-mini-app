@@ -56,6 +56,9 @@ COPY --from=build /opt/yuling/app/package.json ./
 COPY --from=build /opt/yuling/app/dist/next.config.mjs ./next.config.mjs
 COPY --from=build /opt/yuling/engine /opt/yuling/engine
 COPY deploy/test/runtime-lock.json /opt/yuling/runtime-lock.json
+# Source checkouts and tar extraction may inherit the relay's private umask 077.
+# Only public image runtime files are readable; host credentials are never copied.
+RUN chmod -R a+rX,go-w /opt/yuling
 RUN APP_SHA="$APP_SHA" SOURCE_DIRTY="$SOURCE_DIRTY" python -c \
     "import json,os,pathlib,re; sha=os.environ['APP_SHA']; assert re.fullmatch('[0-9a-f]{40}',sha); pathlib.Path('/opt/yuling/release.json').write_text(json.dumps({'app_sha':sha,'engine_sha':'be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192','source_dirty':os.environ['SOURCE_DIRTY']!='false'}))" \
     && mkdir -p /opt/yuling/app/.next/cache /home/ppt/.config /home/ppt/.cache \

@@ -292,7 +292,22 @@ def prepare_package(api, deployment, config, root, phase):
         run(*command, "--engine", engine, "--dependency-cache",
             Path(config["state_dir"]) / "dependency-cache", env=environment)
         phase("image_visual_checks")
-        run(sys.executable, checkout / "deploy/test/verify-image.py", "--build-output", output, env=environment)
+        try:
+            run(sys.executable, checkout / "deploy/test/verify-image.py", "--build-output", output, env=environment)
+        except subprocess.CalledProcessError:
+            diagnostic = output / "image-check-error.json"
+            if diagnostic.is_file() and not diagnostic.is_symlink() and diagnostic.stat().st_size <= 1024:
+                data = json.loads(diagnostic.read_text())
+                stages = {"container_start", "runtime_permissions", "readiness", "quick_smoke",
+                          "repeatability", "memory_and_evidence"}
+                if (set(data) == {"schema", "stage", "code", "exit_code"} and data["schema"] == 1
+                        and data["stage"] in stages and type(data["exit_code"]) is int
+                        and data["code"] in {"image_permission_denied", "image_check_failed"}):
+                    record = Path(config["state_dir"]) / (str(deployment["id"]) + "-image-check-error.json")
+                    with record.open("x") as stream:
+                        json.dump(data, stream)
+                    record.chmod(0o600)
+            raise
         if checked_request(api, deployment) != "prepare":
             raise ValueError("request changed during preparation")
         result = prepared.accept(root, output, checkout, sha)
@@ -345,6 +360,9 @@ def build_and_transfer(api, deployment, operation, config):
     except Exception as error:
         if isinstance(error, subprocess.CalledProcessError) and error.returncode == 4 and step == "package_build_and_audits":
             step = "dependency_audit"
+        if isinstance(error, subprocess.CalledProcessError) and step == "image_visual_checks":
+            if error.returncode in (5, 6):
+                raise StepFailure(step, "image_permission_denied" if error.returncode == 5 else "image_check_failed") from error
         code = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]{1,80}", str(error)) else "operation_failed"
         raise StepFailure(step, code) from error
 

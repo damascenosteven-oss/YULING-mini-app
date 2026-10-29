@@ -82,6 +82,9 @@ python3 /home/USER/YULING-mini-app/deploy/test/local-bridge.py \
 同一提交 24 小时内再次 prepare 会校验复用；过期后再次 prepare 只重新执行
 两份审计，不重建包或重复捕获。审计失败仍停止，损坏包不能借刷新审计恢复。
 不要手工编辑包、摘要、审计或接受记录。
+若失败摘要包含 `image_permission_denied`，表示最终镜像运行文件权限未通过，
+本次包不会被接受或上传。电脑保留该请求编号对应的脱敏镜像检查记录；
+检查/修复构建代码后再新建请求，不通过放宽电脑密钥权限处理。
 缺包/过期时提示重新 prepare；若提示 `inspect workstation package`，表示包或证据损坏，
 应保留电脑日志并检查本机文件，不能靠反复点击 prepare 或改摘要放行。
 

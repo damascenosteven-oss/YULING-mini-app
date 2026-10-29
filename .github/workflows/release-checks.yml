@@ -27,19 +27,20 @@ jobs:
           "$RUNNER_TEMP/probe-venv/bin/python" deploy/test/probe-sdk-check.py
       - name: Actual restricted SSH entry and Docker rollback
         run: python3 deploy/test/receiver-integration.py --output "$RUNNER_TEMP/receiver-entry"
-      - name: Build without deployment credentials
-        run: python3 deploy/test/build-image.py --output "$RUNNER_TEMP/release-check"
-      - name: Verify packaged runtime and repeatability
-        run: python3 deploy/test/verify-image.py --build-output "$RUNNER_TEMP/release-check"
+      - name: Strict-umask real prepare, final image and permission-fault regression
+        run: python3 deploy/test/strict-prepare-check.py --output "$RUNNER_TEMP/release-check"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: release-check-evidence
           path: |
-            ${{ runner.temp }}/release-check/packaged-candidate
-            ${{ runner.temp }}/release-check/image-memory.txt
-            ${{ runner.temp }}/release-check/verification.json
-            ${{ runner.temp }}/release-check/fresh-audits
+            ${{ runner.temp }}/release-check/result.json
+            ${{ runner.temp }}/release-check/fault/image-check-error.json
+            ${{ runner.temp }}/release-check/state/*-image-check-error.json
+            ${{ runner.temp }}/release-check/state/prepared-releases/*/packaged-candidate
+            ${{ runner.temp }}/release-check/state/prepared-releases/*/image-memory.txt
+            ${{ runner.temp }}/release-check/state/prepared-releases/*/verification.json
+            ${{ runner.temp }}/release-check/state/prepared-releases/*/audits
             ${{ runner.temp }}/receiver-entry/result.json
             ${{ runner.temp }}/receiver-entry/prepared-entry.json
             ${{ runner.temp }}/receiver-entry/probe-entry.json

@@ -176,6 +176,32 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(self.api.states[1]["state"], "failure")
         self.assertFalse((self.state / "prepared-releases" / self.sha).exists())
 
+    def test_permission_failure_reaches_phone_and_keeps_safe_diagnostic(self):
+        def failed(*args, **kwargs):
+            if str(args[1]).endswith("verify-image.py"):
+                import subprocess
+                output = Path(args[args.index("--build-output") + 1])
+                (output / "image-check-error.json").write_text(json.dumps({"schema": 1,
+                    "stage": "runtime_permissions", "code": "image_permission_denied", "exit_code": 1}))
+                raise subprocess.CalledProcessError(5, ["private-command"])
+            self.execute(*args, **kwargs)
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), \
+                patch.object(self.bridge, "run", side_effect=failed), \
+                patch.object(self.bridge, "secret", side_effect=AssertionError("no credentials")):
+            with self.assertRaises(self.bridge.StepFailure) as stopped:
+                self.request("prepare")
+        self.assertEqual(stopped.exception.code, "image_permission_denied")
+        self.assertIn("image_permission_denied", self.api.states[1]["description"])
+        diagnostic = json.loads((self.state / "1-image-check-error.json").read_text())
+        self.assertEqual(diagnostic["stage"], "runtime_permissions")
+        self.assertNotIn("private", json.dumps(diagnostic) + self.api.states[1]["description"])
+        self.assertFalse((self.state / "prepared-releases" / self.sha).exists())
+        self.assertEqual(self.ssh, [])
+        # The next new request succeeds; the failed request remains recorded.
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=self.execute):
+            self.request("prepare")
+        self.assertEqual(self.api.states[2]["state"], "success")
+
     def test_cancel_after_upload_prevents_activation_and_retains_package(self):
         with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=self.execute):
             self.request("prepare")
