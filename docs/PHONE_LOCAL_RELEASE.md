@@ -37,8 +37,11 @@
    来源不符或对象损坏时接力会停止，不会自行改用旧提交。
    同目录下的 `runtime-cache/` 保存校验过的固定 Node、Chrome 和 pnpm 文件，
    仅预热时允许补齐；正式发布只读取。缓存缺失或校验失败时该次请求失败。
+   `dependency-cache/` 保存按 `package.json`、`pnpm-lock.yaml`、运行环境锁和
+   Linux 架构绑定的 pnpm 包。预热时验证完整离线安装；正式发布只读缓存，
+   镜像内使用冻结离线安装。不要手工修改这两个缓存。
 
-6. 首次手机发布前，在同一 WSL 环境准备源码和运行环境缓存：
+6. 首次手机发布前，在同一 WSL 环境准备源码、运行环境和依赖缓存：
 
 ```bash
 python3 /home/USER/YULING-mini-app/deploy/test/local-bridge.py \
@@ -47,6 +50,8 @@ python3 /home/USER/YULING-mini-app/deploy/test/local-bridge.py \
 
    这个命令实时核对受保护 `main` 和该提交的应用与发布检查，准备应用和固定引擎源码。
    同时依据 `runtime-lock.json` 下载并核对固定运行环境文件；每个缺失文件最多尝试三次。
+   依赖预取依据锁文件执行 `pnpm fetch`，每次最多五分钟、最多三次；
+   只有冻结离线安装成功才接受缓存。预热需要联网，正式镜像安装依赖时不下载包。
    若已有另一轮构建中经过校验的下载目录，可在上述命令末尾增加
    `--runtime-seed-dir /绝对路径/runtime-downloads`，由程序再次校验哈希后复制到缓存。
    这个命令不创建发布请求、不构建镜像，也不连接服务器。若检查或下载失败，先看错误阶段，

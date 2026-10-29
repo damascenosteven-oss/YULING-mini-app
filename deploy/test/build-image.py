@@ -5,11 +5,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -149,6 +152,158 @@ def prepare_downloads(target, lock, runtime_cache=None, offline=False, seed_dir=
     return downloads
 
 
+def dependency_identity():
+    digest = hashlib.sha256(b"linux/amd64\0")
+    for name in ("package.json", "pnpm-lock.yaml", "deploy/test/runtime-lock.json"):
+        digest.update(name.encode() + b"\0")
+        digest.update((HERE / name).read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def dependency_tree_digest(store):
+    if store.is_symlink() or not store.is_dir():
+        raise RuntimeError("Dependency store is missing or unsafe")
+    digest = hashlib.sha256()
+    files = 0
+    for path in sorted(store.rglob("*")):
+        if path.is_symlink():
+            raise RuntimeError("Dependency store contains a symlink")
+        if path.is_dir():
+            continue
+        if not sha_file_is_regular(path):
+            raise RuntimeError("Dependency store contains an unsafe file")
+        digest.update(path.relative_to(store).as_posix().encode() + b"\0")
+        digest.update(bytes.fromhex(sha(path)))
+        files += 1
+    if not files:
+        raise RuntimeError("Dependency store is empty")
+    return digest.hexdigest()
+
+
+def dependency_toolchain(downloads, stage, lock):
+    tools = stage / "toolchain"
+    tools.mkdir()
+    with tarfile.open(downloads / "node.tar.xz") as archive:
+        archive.extractall(tools, filter="data")
+    with tarfile.open(downloads / "pnpm.tgz") as archive:
+        archive.extractall(tools / "pnpm", filter="data")
+    node = tools / ("node-v" + lock["node"] + "-linux-x64") / "bin/node"
+    pnpm = tools / "pnpm/package/bin/pnpm.cjs"
+    if not sha_file_is_regular(node) or not sha_file_is_regular(pnpm):
+        raise RuntimeError("Pinned dependency toolchain is incomplete")
+    return node, pnpm
+
+
+def populate_dependency_store(stage, downloads, lock):
+    node, pnpm = dependency_toolchain(downloads, stage, lock)
+    store = stage / "store"
+    fetch = stage / "fetch-project"
+    verify = stage / "verify-project"
+    fetch.mkdir()
+    verify.mkdir()
+    shutil.copyfile(HERE / "pnpm-lock.yaml", fetch / "pnpm-lock.yaml")
+    for name in ("package.json", "pnpm-lock.yaml"):
+        shutil.copyfile(HERE / name, verify / name)
+    env = os.environ.copy()
+    env["PATH"] = str(node.parent) + os.pathsep + env.get("PATH", "")
+    env["NODE_ENV"] = "development"
+    command = [str(node), str(pnpm), "fetch", "--store-dir", str(store)]
+    for attempt in range(3):
+        try:
+            subprocess.run(command, cwd=fetch, env=env, check=True, timeout=300,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            break
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            print("Dependency fetch attempt " + str(attempt + 1) + "/3 failed: " + type(error).__name__,
+                  flush=True)
+            if attempt == 2:
+                raise RuntimeError("Pinned dependency fetch failed after three attempts") from None
+            time.sleep((2, 5)[attempt])
+    dependency_tree_digest(store)
+    env["npm_config_offline"] = "true"
+    try:
+        subprocess.run([str(node), str(pnpm), "install", "--offline", "--frozen-lockfile",
+                        "--store-dir", str(store)], cwd=verify, env=env, check=True, timeout=300,
+                       stdout=subprocess.PIPE)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError("Pinned dependency cache incomplete: offline frozen install failed") from error
+    for path in (stage / "toolchain", fetch, verify):
+        shutil.rmtree(path)
+    return dependency_tree_digest(store)
+
+
+def prepare_dependencies(target, downloads, lock, cache_root=None, offline=False):
+    if sys.platform != "linux" or platform.machine() != "x86_64":
+        raise RuntimeError("Dependency prefetch requires Linux amd64")
+    if offline and cache_root is None:
+        raise RuntimeError("Offline dependency build requires a cache")
+    key = dependency_identity()
+    if cache_root is not None:
+        cache_root = Path(cache_root)
+        if cache_root.is_symlink():
+            raise RuntimeError("Unsafe dependency cache directory")
+        cache_root = cache_root.resolve()
+        if cache_root.is_relative_to(HERE):
+            raise RuntimeError("Dependency cache must be outside the repository")
+        cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if cache_root.stat().st_mode & 0o077:
+            raise RuntimeError("Dependency cache directory must have mode 0700")
+        entry = cache_root / key
+        if entry.exists() or entry.is_symlink():
+            if entry.is_symlink() or not entry.is_dir():
+                raise RuntimeError("Unsafe dependency cache entry")
+            manifest = entry / "manifest.json"
+            if not sha_file_is_regular(manifest):
+                raise RuntimeError("Dependency cache manifest is missing or unsafe")
+            metadata = json.loads(manifest.read_text())
+            if metadata.get("identity") != key or dependency_tree_digest(entry / "store") != metadata.get("tree_sha256"):
+                raise RuntimeError("Dependency cache integrity failed")
+            store = entry / "store"
+        elif offline:
+            raise RuntimeError("Pinned dependency cache missing for current lockfile")
+        else:
+            lock_file = cache_root / (key + ".lock")
+            try:
+                descriptor = os.open(lock_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError as error:
+                raise RuntimeError("Dependency cache is already in use") from error
+            os.close(descriptor)
+            stage = Path(tempfile.mkdtemp(prefix=key + ".partial-", dir=cache_root))
+            try:
+                tree = populate_dependency_store(stage, downloads, lock)
+                (stage / "manifest.json").write_text(json.dumps({"identity": key, "tree_sha256": tree}))
+                if entry.exists() or entry.is_symlink():
+                    raise RuntimeError("Dependency cache changed during prefetch")
+                os.replace(stage, entry)
+                store = entry / "store"
+            finally:
+                if stage.exists():
+                    shutil.rmtree(stage)
+                lock_file.unlink()
+    else:
+        stage = Path(tempfile.mkdtemp(prefix="dependency-prep-", dir=target))
+        try:
+            populate_dependency_store(stage, downloads, lock)
+            store = stage / "store"
+            output_store = target / "dependency-store"
+            if output_store.exists() or output_store.is_symlink():
+                raise RuntimeError("Dependency output already exists")
+            shutil.copytree(store, output_store)
+            if dependency_tree_digest(output_store) != dependency_tree_digest(store):
+                raise RuntimeError("Dependency output changed during copy")
+            return output_store
+        finally:
+            shutil.rmtree(stage)
+    output_store = target / "dependency-store"
+    if output_store.exists() or output_store.is_symlink():
+        raise RuntimeError("Dependency output already exists")
+    shutil.copytree(store, output_store)
+    if dependency_tree_digest(output_store) != dependency_tree_digest(store):
+        raise RuntimeError("Dependency output changed during copy")
+    return output_store
+
+
 def prepare(target, engine, lock, runtime_cache=None, offline=False, seed_dir=None):
     downloads = prepare_downloads(target, lock, runtime_cache, offline, seed_dir)
     if engine is None:
@@ -183,6 +338,8 @@ def main():
     parser.add_argument("--runtime-cache", type=Path)
     parser.add_argument("--runtime-offline", action="store_true")
     parser.add_argument("--runtime-seed-dir", type=Path)
+    parser.add_argument("--dependency-cache", type=Path)
+    parser.add_argument("--dependency-offline", action="store_true")
     args = parser.parse_args()
     target = args.output.resolve()
     if target.is_relative_to(HERE):
@@ -199,11 +356,14 @@ def main():
     tag = "yuling-ppt-test:" + release
     downloads, engine = prepare(target, args.engine.resolve() if args.engine else None, lock,
                                 args.runtime_cache, args.runtime_offline, args.runtime_seed_dir)
+    dependency_store = prepare_dependencies(target, downloads, lock,
+                                            args.dependency_cache, args.dependency_offline)
     if args.prepare_only:
-        print("Pinned runtime and engine contexts verified")
+        print("Pinned runtime, engine and dependency contexts verified")
         return
     run("docker", "build", "--pull=false", "--build-context", "engine=" + str(engine),
-        "--build-context", "runtime_downloads=" + str(downloads), "--build-arg", "APP_SHA=" + app_sha,
+        "--build-context", "runtime_downloads=" + str(downloads),
+        "--build-context", "dependency_store=" + str(dependency_store), "--build-arg", "APP_SHA=" + app_sha,
         "--build-arg", "SOURCE_DIRTY=" + ("true" if dirty or args.development else "false"),
         "-f", HERE / "deploy/test/Dockerfile", "-t", tag, HERE)
     image_id = output("docker", "image", "inspect", "--format", "{{.Id}}", tag)
