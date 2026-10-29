@@ -3,7 +3,9 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import sys
 import uuid
+from runtime_permissions import CHECK
 
 
 def run(*args):
@@ -19,10 +21,13 @@ def main():
     evidence = args.build_output / "packaged-candidate"
     if evidence.exists():
         raise RuntimeError("Use a fresh evidence directory")
+    stage = "container_start"
     try:
         run("docker", "run", "-d", "--name", name, "--cpus", "1", "--memory", "1024m",
             "--memory-swap", "1024m", "--pids-limit", "256", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", info["tag"])
+        stage = "runtime_permissions"
+        print(run("docker", "exec", name, "python", "-c", CHECK))
         # Invoke the exact production readiness/static-asset path without publishing a port.
         import importlib.util
         spec = importlib.util.spec_from_file_location("receiver", Path(__file__).with_name("release.py"))
@@ -30,7 +35,9 @@ def main():
         spec.loader.exec_module(receiver)
         runtime = receiver.DockerRuntime({})
         runtime.call = lambda *args, **kwargs: run("docker", *args)
+        stage = "readiness"
         runtime.readiness(name)
+        stage = "quick_smoke"
         quick = run("docker", "exec", name, "node", "dist/release-smoke.js", "quick")
         print(quick)
         checked = json.loads(quick)
@@ -38,8 +45,10 @@ def main():
                            "engine_sha": "be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192", "source_dirty": False}
         if checked.get("status") != "passed" or checked.get("pages") != 12 or checked.get("source") != expected_source:
             raise RuntimeError("Final image source or smoke result mismatch")
+        stage = "repeatability"
         print(run("docker", "exec", name, "node", "dist/release-smoke.js", "repeat", "/tmp/packaged-candidate"))
         run("docker", "cp", name + ":/tmp/packaged-candidate", evidence)
+        stage = "memory_and_evidence"
         stats = run("docker", "exec", name, "sh", "-c",
                     "cat /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory.events")
         (args.build_output / "image-memory.txt").write_text(stats)
@@ -54,6 +63,16 @@ def main():
             "app_sha": info["app_sha"], "engine_sha": expected_source["engine_sha"],
             "image_id": manifest["image_id"], "source_dirty": False,
             "pages": 12, "captures": 2, "differences": 0}))
+    except Exception as error:
+        # Classify captured child output but never print it: it may contain secrets.
+        detail = str(getattr(error, "stderr", "") or "")
+        denied = any(value in detail for value in ("EACCES", "PermissionError", "permission denied"))
+        diagnostic = {"schema": 1, "stage": stage,
+                      "code": "image_permission_denied" if denied else "image_check_failed",
+                      "exit_code": getattr(error, "returncode", 1)}
+        (args.build_output / "image-check-error.json").write_text(json.dumps(diagnostic))
+        print(json.dumps(diagnostic), file=sys.stderr, flush=True)
+        raise SystemExit(5 if denied else 6) from None
     finally:
         # Only the random container created by this invocation; no images/volumes/prune.
         subprocess.run(["docker", "container", "rm", "-f", name], check=False, capture_output=True)

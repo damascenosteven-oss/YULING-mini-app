@@ -38,7 +38,9 @@ RUN pnpm test:ppt:golden:geometry \
     && env -u NODE_ENV pnpm build \
     && node deploy/test/build-smoke.mjs
 # Fresh full/production audits are mandatory in build-image.py, outside cached layers.
-RUN pnpm prune --prod
+# Normalize public runtime data before the final COPY, avoiding a duplicate
+# application layer when the relay's source checkout inherits umask 077.
+RUN pnpm prune --prod && chmod -R a+rX,go-w /opt/yuling
 
 FROM runtime AS application
 ENV HOME=/home/ppt XDG_CONFIG_HOME=/home/ppt/.config XDG_CACHE_HOME=/home/ppt/.cache
@@ -58,6 +60,7 @@ COPY --from=build /opt/yuling/engine /opt/yuling/engine
 COPY deploy/test/runtime-lock.json /opt/yuling/runtime-lock.json
 RUN APP_SHA="$APP_SHA" SOURCE_DIRTY="$SOURCE_DIRTY" python -c \
     "import json,os,pathlib,re; sha=os.environ['APP_SHA']; assert re.fullmatch('[0-9a-f]{40}',sha); pathlib.Path('/opt/yuling/release.json').write_text(json.dumps({'app_sha':sha,'engine_sha':'be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192','source_dirty':os.environ['SOURCE_DIRTY']!='false'}))" \
+    && chmod 0644 /opt/yuling/runtime-lock.json \
     && mkdir -p /opt/yuling/app/.next/cache /home/ppt/.config /home/ppt/.cache \
     && chown -R 10001:10001 /opt/yuling/app/.next/cache /home/ppt
 USER 10001:10001

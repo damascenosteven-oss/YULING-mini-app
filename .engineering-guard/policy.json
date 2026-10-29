@@ -81,6 +81,12 @@
         "plan_sha256": "d2dcc5311d59d31704f9c405542de47e07252fb4a8d6959c57e2b148af63efe6",
         "adr": "docs/adr/0011-prepared-release.md",
         "adr_sha256": "382bff13e548f9dc9906f646f84352d85de981ae572f2ce7225eab51adc3fc06"
+      },
+      "26": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/26",
+        "approval_source": "Owner explicitly requested implementation of the accepted prepare #12 runtime-permissions and safe-error-reporting plan on 2026-10-29. Code, tests, Issue-branch push and review PR authorized; owner retains merge and actual mobile prepare/publish/rollback. No server action.",
+        "plan": "docs/plans/issue-26-runtime-permissions.md",
+        "plan_sha256": "25080666a81ced515a56ac2e73a9ea4ca5966214b5d633dad40636380e8bcaed"
       }
     }
   }
