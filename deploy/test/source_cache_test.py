@@ -96,7 +96,7 @@ class SourceCacheTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.bridge.ensure_cached_source(self.cache, self.url, "f" * 40)
 
-    def test_request_to_verified_cache_build_upload_and_status(self):
+    def test_real_cached_checkout_and_fixed_engine(self):
         engine = self.root / "engine"
         subprocess.run(["git", "init", "-q", str(engine)], check=True)
         git("-C", engine, "config", "user.name", "Test")
@@ -111,57 +111,22 @@ class SourceCacheTests(unittest.TestCase):
         git("-C", self.source, "add", ".")
         git("-C", self.source, "commit", "-qm", "lock")
         sha = git("-C", self.source, "rev-parse", "HEAD")
-        expiry = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-        deployment = {"id": 99, "sha": sha, "ref": sha,
-                      "environment": self.bridge.ENVIRONMENT,
-                      "creator": {"login": "github-actions[bot]"},
-                      "payload": {"schema": 1, "operation": "publish", "run_id": 42,
-                                  "attempt": 1, "actor": self.bridge.OWNER,
-                                  "expires_at": expiry}}
-        class API:
-            def __init__(self):
-                self.states = ["pending"]
-            def call(self, route, data=None):
-                if data is not None:
-                    self.states.insert(0, data["state"])
-                    return {}
-                if route.startswith("/actions/runs/"):
-                    return {"id": 42, "run_attempt": 1, "event": "workflow_dispatch",
-                            "head_branch": "main", "head_sha": sha, "status": "in_progress",
-                            "path": ".github/workflows/test-site.yml",
-                            "actor": {"login": "damascenosteven-oss"}}
-                if route == "/branches/main":
-                    return {"commit": {"sha": sha}, "protected": True}
-                if "/check-runs" in route:
-                    return {"check_runs": [{"name": name, "head_sha": sha,
-                                            "conclusion": "success", "id": number}
-                                           for number, name in enumerate(("app-checks", "release-checks"), 1)]}
-                if "/statuses" in route:
-                    return [{"state": self.states[0]}]
-                raise AssertionError(route)
-        api = API()
-        stages = []
-        def fake_run(*args, env=None):
-            if str(args[1]).endswith("build-image.py"):
-                self.assertEqual(args[args.index("--engine") + 1].name, "engine.git")
-                output = Path(args[args.index("--output") + 1])
-                output.mkdir()
-                data = b"verified bundle"
-                (output / "bundle.tar").write_bytes(data)
-                (output / "bundle.sha256").write_text(hashlib.sha256(data).hexdigest())
-            if "--stage" in args:
-                stages.append(args[args.index("--stage") + 1])
-        config = {"state_dir": str(self.root / "state"), "host": "115.159.143.24",
-                  "ssh_key": "fixture", "known_hosts": "fixture"}
-        (self.root / "state").mkdir()
-        with patch.object(self.bridge, "APP_SOURCE", self.url), \
-                patch.object(self.bridge, "ENGINE_SOURCE", engine.as_uri()), \
-                patch.object(self.bridge, "ENGINE_SHA", engine_sha), \
-                patch.object(self.bridge, "run", side_effect=fake_run), \
-                patch.object(self.bridge, "secret", return_value="fixture"):
-            self.bridge.handle(api, deployment, config, self.root / "state")
-        self.assertEqual(stages, ["upload", "activate"])
-        self.assertEqual(api.states[:3], ["success", "in_progress", "pending"])
+        checkout = self.root / "checkout"
+        with patch.object(self.bridge, "APP_SOURCE", self.url),                 patch.object(self.bridge, "ENGINE_SOURCE", engine.as_uri()),                 patch.object(self.bridge, "ENGINE_SHA", engine_sha):
+            actual_engine = self.bridge.prepare_sources(self.root / "state", sha, checkout)
+        self.assertEqual(git("-C", checkout, "rev-parse", "HEAD"), sha)
+        self.assertEqual(git("-C", checkout, "status", "--porcelain"), "")
+        self.assertEqual(git("-C", actual_engine, "rev-parse", "refs/heads/pinned"), engine_sha)
+
+    def test_cache_hit_repins_objects_before_nonlocal_clone(self):
+        self.bridge.ensure_cached_source(self.cache, self.url, self.sha)
+        git("-C", self.cache, "update-ref", "-d", "refs/heads/pinned")
+        with patch.object(self.bridge, "fetch_source", side_effect=AssertionError("must use verified object")):
+            self.bridge.ensure_cached_source(self.cache, self.url, self.sha)
+        clone = self.root / "repinned-clone"
+        git("clone", "--no-local", "--no-checkout", str(self.cache), str(clone))
+        git("-C", clone, "checkout", "--detach", self.sha)
+        self.assertEqual(git("-C", clone, "rev-parse", "HEAD"), self.sha)
 
     def test_warm_entry_only_checks_main_and_prepares_sources(self):
         sha = "a" * 40

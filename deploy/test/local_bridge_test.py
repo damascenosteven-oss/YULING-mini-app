@@ -1,6 +1,9 @@
-"""Blocking tests for the phone request and workstation relay contract."""
-import importlib.util
+"""Phone entry -> relay -> immutable package -> restricted-client boundary."""
+from datetime import datetime, timezone, timedelta
 import hashlib
+import importlib.util
+import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -8,270 +11,249 @@ from unittest.mock import patch
 
 
 def load(name):
-    path = Path(__file__).with_name(name + ".py")
-    spec = importlib.util.spec_from_file_location(name.replace("-", "_"), path)
+    spec = importlib.util.spec_from_file_location(name.replace("-", "_"), Path(__file__).with_name(name + ".py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 class ContractTests(unittest.TestCase):
-    def test_request_rejects_wrong_owner_and_expired(self):
-        bridge = load("local-bridge")
-        request = {"schema": 1, "operation": "publish", "run_id": 42,
-                   "attempt": 1, "actor": "damascenosteven-oss",
-                   "expires_at": "2026-10-27T17:00:00Z"}
-        deployment = {"id": 8, "sha": "a" * 40, "ref": "a" * 40,
-                      "environment": "ppt-test-local-relay", "creator": {"login": "github-actions[bot]"},
-                      "payload": request}
-        run = {"id": 42, "run_attempt": 1, "event": "workflow_dispatch",
-               "head_branch": "main", "head_sha": "a" * 40, "status": "in_progress",
-               "path": ".github/workflows/test-site.yml", "actor": {"login": "damascenosteven-oss"}}
-        branch = {"commit": {"sha": "a" * 40}, "protected": True}
-        self.assertEqual(bridge.validate(deployment, run, branch, "2026-10-27T16:00:00Z"), "publish")
-        with self.assertRaises(ValueError):
-            bridge.validate(deployment, {**run, "actor": {"login": "intruder"}}, branch,
-                            "2026-10-27T16:00:00Z")
-        with self.assertRaises(ValueError):
-            bridge.validate(deployment, run, branch, "2026-10-27T17:00:00Z")
-
-    def test_request_rejects_changed_main_or_cancelled_run(self):
-        bridge = load("local-bridge")
-        deployment = {"id": 8, "sha": "a" * 40, "ref": "a" * 40,
-                      "environment": "ppt-test-local-relay", "creator": {"login": "github-actions[bot]"},
-                      "payload": {"schema": 1, "operation": "rollback", "run_id": 42,
-                                  "attempt": 1, "actor": "damascenosteven-oss",
-                                  "expires_at": "2026-10-27T17:00:00Z"}}
-        run = {"id": 42, "run_attempt": 1, "event": "workflow_dispatch",
-               "head_branch": "main", "head_sha": "a" * 40, "status": "in_progress",
-               "path": ".github/workflows/test-site.yml", "actor": {"login": "damascenosteven-oss"}}
-        with self.assertRaises(ValueError):
-            bridge.validate(deployment, run, {"commit": {"sha": "b" * 40}, "protected": True},
-                            "2026-10-27T16:00:00Z")
-        with self.assertRaises(ValueError):
-            bridge.validate(deployment, {**run, "status": "completed"},
-                            {"commit": {"sha": "a" * 40}, "protected": True}, "2026-10-27T16:00:00Z")
-
-    def test_required_checks_bind_to_sha(self):
-        bridge = load("local-bridge")
-        checks = {"check_runs": [{"name": name, "head_sha": "a" * 40, "conclusion": "success", "id": index}
-                                for index, name in enumerate(("app-checks", "release-checks"), 1)]}
-        bridge.require_checks(checks, "a" * 40)
-        checks["check_runs"][0]["head_sha"] = "b" * 40
-        with self.assertRaises(ValueError):
-            bridge.require_checks(checks, "a" * 40)
-        checks["check_runs"][0]["head_sha"] = "a" * 40
-        checks["check_runs"].append({"name": "app-checks", "head_sha": "a" * 40,
-                                    "conclusion": "failure", "id": 3})
-        with self.assertRaises(ValueError):
-            bridge.require_checks(checks, "a" * 40)
-
-    def test_duplicate_request_never_reaches_server_and_failure_is_reported(self):
-        bridge = load("local-bridge")
-        deployment = {"id": 8, "sha": "a" * 40}
-        class FakeAPI:
-            def __init__(self):
-                self.calls = []
-            def call(self, route, data=None):
-                self.calls.append((route, data))
-                return {}
-        api = FakeAPI()
-        with tempfile.TemporaryDirectory() as tmp:
-            state_dir = Path(tmp)
-            with patch.object(bridge, "checked_request", return_value="rollback"), \
-                    patch.object(bridge, "build_and_transfer", side_effect=RuntimeError("fixture")) as execute:
-                with self.assertRaises(RuntimeError):
-                    bridge.handle(api, deployment, {}, state_dir)
-                bridge.handle(api, deployment, {}, state_dir)
-                self.assertEqual(execute.call_count, 1)
-        self.assertEqual([data["state"] for _, data in api.calls],
-                         ["in_progress", "failure"])
-
-    def test_publish_rechecks_after_upload_before_activation(self):
-        bridge = load("local-bridge")
-        deployment = {"id": 8, "sha": "a" * 40,
-                      "payload": {"run_id": 42, "attempt": 1}}
-        config = {"host": "115.159.143.24", "ssh_key": "fixture",
-                  "known_hosts": "fixture", "state_dir": "/fixture-state"}
-        stages = []
-        def fake_run(*args, env=None):
-            if len(args) > 1 and str(args[1]).endswith("build-image.py"):
-                self.assertIn("--runtime-cache", args)
-                self.assertIn("--runtime-offline", args)
-                self.assertIn("--dependency-cache", args)
-                self.assertIn("--dependency-offline", args)
-                output = Path(args[args.index("--output") + 1])
-                output.mkdir()
-                (output / "bundle.tar").write_bytes(b"verified fixture")
-                (output / "bundle.sha256").write_text(
-                    hashlib.sha256(b"verified fixture").hexdigest() + "  bundle.tar\n")
-            if "--stage" in args:
-                stages.append(args[args.index("--stage") + 1])
-        def git_output(args, **kwargs):
-            return "a" * 40 if args[-1] == "HEAD" else b""
-        with patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
-                patch.object(bridge, "run", side_effect=fake_run), \
-                patch.object(bridge, "checked_request", side_effect=["publish", "publish"]) as checked, \
-                patch.object(bridge, "secret", return_value="fixture"), \
-                patch.object(bridge.subprocess, "check_output", side_effect=git_output):
-            bridge.build_and_transfer(object(), deployment, "publish", config)
-        self.assertEqual(stages, ["upload", "activate"])
-        self.assertEqual(checked.call_count, 2)
-
-    def test_warm_cache_prepares_dependencies_without_publishing(self):
-        bridge = load("local-bridge")
-        sha = "a" * 40
+    def setUp(self):
+        self.bridge = load("local-bridge")
+        self.phone = load("phone-request")
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.state = Path(self.temp.name)
+        self.sha = "a" * 40
+        self.commands = []
+        self.ssh = []
+        self.config = {"state_dir": str(self.state), "host": "115.159.143.24", "ssh_key": "fixture",
+                       "known_hosts": "fixture", "trusted_client": "/trusted/ssh-client.py"}
+        test = self
         class API:
-            def call(self, route):
-                if route == "/branches/main":
-                    return {"protected": True, "commit": {"sha": sha}}
-                if route.startswith("/commits/"):
-                    return {"check_runs": []}
-                raise AssertionError(route)
-        calls = []
-        with tempfile.TemporaryDirectory() as tmp, \
-                patch.object(bridge, "require_checks"), \
-                patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
-                patch.object(bridge, "run", side_effect=lambda *args: calls.append(args)):
-            bridge.warm_cache(API(), Path(tmp))
-        self.assertEqual(len(calls), 1)
-        self.assertIn("--prepare-only", calls[0])
-        self.assertIn("--dependency-cache", calls[0])
-        self.assertNotIn("--dependency-offline", calls[0])
-
-    def test_rollback_uses_restricted_client_without_build(self):
-        bridge = load("local-bridge")
-        deployment = {"id": 8, "sha": "a" * 40,
-                      "payload": {"run_id": 42, "attempt": 1}}
-        config = {"host": "115.159.143.24", "ssh_key": "fixture",
-                  "known_hosts": "fixture", "trusted_client": "/trusted/ssh-client.py"}
-        commands = []
-        with patch.object(bridge, "run", side_effect=lambda *args, **kwargs: commands.append(args)), \
-                patch.object(bridge, "checked_request", return_value="rollback"), \
-                patch.object(bridge, "secret", return_value="fixture"):
-            bridge.build_and_transfer(object(), deployment, "rollback", config)
-        self.assertEqual(len(commands), 1)
-        self.assertEqual(commands[0][-1], "rollback")
-
-    def test_bad_bundle_digest_never_uploads(self):
-        bridge = load("local-bridge")
-        deployment = {"id": 8, "sha": "a" * 40,
-                      "payload": {"run_id": 42, "attempt": 1}}
-        stages = []
-        def fake_run(*args, env=None):
-            if len(args) > 1 and str(args[1]).endswith("build-image.py"):
-                output = Path(args[args.index("--output") + 1])
-                output.mkdir()
-                (output / "bundle.tar").write_bytes(b"fixture")
-                (output / "bundle.sha256").write_text("0" * 64 + "  bundle.tar\n")
-            if "--stage" in args:
-                stages.append(args[args.index("--stage") + 1])
-        def git_output(args, **kwargs):
-            return "a" * 40 if args[-1] == "HEAD" else b""
-        with patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
-                patch.object(bridge, "run", side_effect=fake_run), \
-                patch.object(bridge.subprocess, "check_output", side_effect=git_output):
-            with self.assertRaises(bridge.StepFailure) as raised:
-                bridge.build_and_transfer(object(), deployment, "publish", {"state_dir": "/fixture-state"})
-        self.assertEqual(raised.exception.step, "bundle_digest")
-        self.assertEqual(stages, [])
-
-    def test_offline_build_failure_never_uploads_or_activates(self):
-        bridge = load("local-bridge")
-        deployment = {"id": 8, "sha": "a" * 40,
-                      "payload": {"run_id": 42, "attempt": 1}}
-        commands = []
-        def fail_build(*args, env=None):
-            commands.append(args)
-            if str(args[1]).endswith("build-image.py"):
-                self.assertIn("--dependency-offline", args)
-                raise RuntimeError("simulated missing dependency cache")
-            raise AssertionError("A failed build must not start SSH transfer")
-        with patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
-                patch.object(bridge, "run", side_effect=fail_build):
-            with self.assertRaises(bridge.StepFailure) as raised:
-                bridge.build_and_transfer(object(), deployment, "publish", {"state_dir": "/fixture-state"})
-        self.assertEqual(raised.exception.step, "pinned_image_build")
-        self.assertEqual(len(commands), 1)
-
-    def test_upload_failure_never_activates(self):
-        bridge = load("local-bridge")
-        deployment = {"id": 8, "sha": "a" * 40,
-                      "payload": {"run_id": 42, "attempt": 1}}
-        config = {"host": "115.159.143.24", "ssh_key": "fixture",
-                  "known_hosts": "fixture", "state_dir": "/fixture-state"}
-        stages = []
-        def fake_run(*args, env=None):
-            if len(args) > 1 and str(args[1]).endswith("build-image.py"):
-                output = Path(args[args.index("--output") + 1])
-                output.mkdir()
-                (output / "bundle.tar").write_bytes(b"fixture")
-                (output / "bundle.sha256").write_text(
-                    hashlib.sha256(b"fixture").hexdigest() + "  bundle.tar\n")
-            if "--stage" in args:
-                stage = args[args.index("--stage") + 1]
-                stages.append(stage)
-                if stage == "upload":
-                    raise OSError("simulated interruption")
-        def git_output(args, **kwargs):
-            return "a" * 40 if args[-1] == "HEAD" else b""
-        with patch.object(bridge, "prepare_sources", return_value=Path("/verified/engine.git")), \
-                patch.object(bridge, "run", side_effect=fake_run), \
-                patch.object(bridge, "checked_request", return_value="publish"), \
-                patch.object(bridge, "secret", return_value="fixture"), \
-                patch.object(bridge.subprocess, "check_output", side_effect=git_output):
-            with self.assertRaises(bridge.StepFailure) as raised:
-                bridge.build_and_transfer(object(), deployment, "publish", config)
-        self.assertEqual(raised.exception.step, "restricted_upload")
-        self.assertEqual(stages, ["upload"])
-
-    def test_source_failure_never_builds_uploads_or_activates(self):
-        bridge = load("local-bridge")
-        deployment = {"id": 8, "sha": "a" * 40,
-                      "payload": {"run_id": 42, "attempt": 1}}
-        commands = []
-        with patch.object(bridge, "prepare_sources", side_effect=OSError("source unavailable")), \
-                patch.object(bridge, "run", side_effect=lambda *args, **kwargs: commands.append(args)):
-            with self.assertRaises(bridge.StepFailure) as raised:
-                bridge.build_and_transfer(object(), deployment, "publish", {"state_dir": "/fixture-state"})
-        self.assertEqual(raised.exception.step, "checkout")
-        self.assertEqual(commands, [])
-
-    def test_relay_continues_after_one_failed_request_without_retrying_it(self):
-        bridge = load("local-bridge")
-        first = {"id": 101, "sha": "a" * 40, "payload": {"operation": "publish"}}
-        second = {"id": 102, "sha": "b" * 40, "payload": {"operation": "publish"}}
-        class API:
-            def __init__(self):
-                self.poll = 0
+            def __init__(self, token=None):
+                self.deployments = []
                 self.states = {}
+                self.run = 42
+                self.cancelled = False
+                self.main_sha = test.sha
             def call(self, route, data=None):
+                if route == "/deployments":
+                    dep = {**data, "id": len(self.deployments) + 1, "sha": data["ref"],
+                           "creator": {"login": "github-actions[bot]"}}
+                    self.deployments.append(dep)
+                    return dep
                 if route.startswith("/deployments?"):
-                    self.poll += 1
-                    return [first] if self.poll == 1 else [first, second]
-                if route.endswith("/statuses?per_page=1"):
+                    return [d for d in self.deployments if "environment=" + d["environment"] + "&" in route]
+                if route.startswith("/actions/runs/"):
+                    return {"id": self.run, "run_attempt": 1, "event": "workflow_dispatch", "head_branch": "main",
+                            "head_sha": test.sha, "status": "completed" if self.cancelled else "in_progress",
+                            "path": ".github/workflows/test-site.yml", "actor": {"login": test.bridge.OWNER}}
+                if route == "/branches/main": return {"protected": True, "commit": {"sha": self.main_sha}}
+                if route.startswith("/commits/"):
+                    return {"check_runs": [{"name": n, "head_sha": test.sha, "id": i, "conclusion": "success"}
+                                           for i, n in enumerate(test.bridge.CHECKS)]}
+                if route.startswith("/deployments/"):
                     identity = int(route.split("/")[2])
-                    return [{"state": self.states.get(identity, "pending")}]
-                if route.endswith("/statuses"):
-                    identity = int(route.split("/")[2])
-                    self.states[identity] = data["state"]
-                    return {}
+                    if data is not None:
+                        self.states[identity] = data
+                        return {}
+                    return [self.states[identity]] if identity in self.states else []
                 raise AssertionError(route)
-        api = API()
-        calls = []
-        with tempfile.TemporaryDirectory() as tmp, \
-                patch.object(bridge, "checked_request", return_value="publish"), \
-                patch.object(bridge, "build_and_transfer",
-                             side_effect=[bridge.StepFailure("pinned_image_build"), None]) as build:
-            def pause(_):
-                if api.poll == 2:
-                    raise StopIteration
-            with patch.object(bridge.time, "sleep", side_effect=pause):
-                with self.assertRaises(StopIteration):
-                    bridge.poll_continuously(api, {}, Path(tmp))
-            calls.extend((build.call_count, api.states[101], api.states[102]))
-        self.assertEqual(calls, [2, "failure", "success"])
+        self.api = API()
+
+    def source(self, state, sha, checkout):
+        checkout.mkdir()
+        (checkout / "deploy/test").mkdir(parents=True)
+        for name, data in (("package.json", "{}"), ("pnpm-lock.yaml", "lockfileVersion: 9.0\n"),
+                           ("deploy/test/runtime-lock.json", "{}"), ("deploy/test/ssh-client.py", "# fixture")):
+            (checkout / name).write_text(data)
+        return Path("/fixture/engine.git")
+
+    def audits(self, output, checkout):
+        audit = output / "fresh-audits"
+        audit.mkdir(parents=True)
+        inputs = {k: hashlib.sha256((checkout / name).read_bytes()).hexdigest() for k, name in zip(
+            self.bridge.prepared.INPUTS, ("package.json", "pnpm-lock.yaml", "deploy/test/runtime-lock.json"))}
+        for name in ("audit-full.json", "audit-prod.json"):
+            (audit / name).write_text(json.dumps({"metadata": {"vulnerabilities": {
+                k: 0 for k in ("info", "low", "moderate", "high", "critical")}}}))
+        (audit / "audit.json").write_text(json.dumps({**inputs, "audited_at": self.bridge.prepared.now_utc().isoformat()}))
+
+    def execute(self, *args, env=None):
+        self.commands.append(tuple(map(str, args)))
+        script = str(args[1])
+        if script.endswith("build-image.py"):
+            output = Path(args[args.index("--output") + 1])
+            output.mkdir()
+            checkout = Path(script).parents[2]
+            self.audits(output, checkout)
+            if "--audit-only" in args: return
+            (output / "bundle.tar").write_bytes(b"complete verified fixture")
+            (output / "bundle.sha256").write_text(hashlib.sha256((output / "bundle.tar").read_bytes()).hexdigest() + "  bundle.tar\n")
+            manifest = {"app_sha": self.sha, "engine_sha": self.bridge.ENGINE_SHA,
+                        "release": self.sha[:12] + "-42-1", "image_id": "sha256:" + "b" * 64}
+            (output / "release.json").write_text(json.dumps(manifest))
+            (output / "image.json").write_text("{}")
+        elif script.endswith("verify-image.py"):
+            output = Path(args[-1])
+            (output / "image-memory.txt").write_text("oom 0\n")
+            (output / "packaged-candidate").mkdir()
+            (output / "packaged-candidate/result.json").write_text("{}")
+            m = json.loads((output / "release.json").read_text())
+            (output / "verification.json").write_text(json.dumps({"schema": 1, "app_sha": self.sha,
+                "engine_sha": self.bridge.ENGINE_SHA, "image_id": m["image_id"], "source_dirty": False,
+                "pages": 12, "captures": 2, "differences": 0}))
+        elif script.endswith("ssh-client.py"):
+            self.ssh.append(args[args.index("--stage") + 1] if "--stage" in args else "rollback")
+        else: raise AssertionError(args)
+
+    def request(self, operation):
+        env = {"GITHUB_REPOSITORY": "damascenosteven-oss/YULING-mini-app", "GITHUB_ACTOR": self.bridge.OWNER,
+               "GITHUB_REF": "refs/heads/main", "GITHUB_SHA": self.sha, "GITHUB_RUN_ID": str(self.api.run),
+               "GITHUB_RUN_ATTEMPT": "1", "OPERATION": operation, "GITHUB_TOKEN": "fixture"}
+        original = self.api.call
+        dispatching = False
+        def call(route, data=None):
+            nonlocal dispatching
+            if route.endswith("/statuses?per_page=1") and data is None:
+                identity = int(route.split("/")[2])
+                state = self.api.states.get(identity, {})
+                if state.get("state") == "pending" and not dispatching:
+                    dispatching = True
+                    try:
+                        self.bridge.poll_once(self.api, self.config, self.state)
+                    finally:
+                        dispatching = False
+            return original(route, data)
+        # Dispatch via the actual phone CLI function, then actual relay validation and handler.
+        with patch.dict(os.environ, env), patch.object(self.phone, "GitHub", return_value=self.api), \
+                patch.object(self.phone.signal, "signal"), patch.object(self.api, "call", side_effect=call):
+            self.phone.main()
+        self.api.run += 1
+
+    def test_real_phone_prepare_then_publish_without_download_or_build(self):
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), \
+                patch.object(self.bridge, "run", side_effect=self.execute), \
+                patch.object(self.bridge, "secret", side_effect=AssertionError("prepare must not read SSH secrets")):
+            self.request("prepare")
+        self.assertEqual(self.ssh, [])
+        self.assertEqual(self.api.deployments[0]["environment"], self.bridge.PREPARE_ENVIRONMENT)
+        self.assertEqual(self.api.states[1]["state"], "success")
+        before = list(self.commands)
+        with patch.object(self.bridge, "prepare_sources", side_effect=AssertionError("publish cannot fetch")), \
+                patch.object(self.bridge, "run", side_effect=self.execute), \
+                patch.object(self.bridge, "secret", return_value="fixture"), \
+                patch("urllib.request.urlopen", side_effect=AssertionError("package registries unavailable")):
+            self.request("publish")
+        self.assertEqual(self.ssh, ["upload", "activate"])
+        self.assertEqual(len(self.commands) - len(before), 2)
+        self.assertEqual(self.api.states[2]["state"], "success")
+        self.assertEqual(self.api.deployments[1]["environment"], self.bridge.ENVIRONMENT)
+        self.bridge.handle(self.api, self.api.deployments[1], self.config, self.state)
+        self.assertEqual(self.ssh, ["upload", "activate"])
+
+    def test_expired_prepare_refreshes_only_audits_and_keeps_exact_bundle(self):
+        now = datetime.now(timezone.utc)
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), \
+                patch.object(self.bridge, "run", side_effect=self.execute):
+            self.request("prepare")
+            package = self.state / "prepared-releases" / self.sha
+            bundle = (package / "bundle.tar").read_bytes()
+            self.commands.clear()
+            with patch.object(self.bridge.prepared, "now_utc", return_value=now + timedelta(hours=25)):
+                self.request("prepare")
+            self.assertEqual(len(self.commands), 1)
+            self.assertIn("--audit-only", self.commands[0])
+            self.assertEqual((package / "bundle.tar").read_bytes(), bundle)
+            self.assertEqual(self.ssh, [])
+
+    def test_failed_prepare_reports_failure_and_never_reads_server_credentials(self):
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), \
+                patch.object(self.bridge, "run", side_effect=RuntimeError("build fixture failure")), \
+                patch.object(self.bridge, "secret", side_effect=AssertionError("no credentials")):
+            with self.assertRaises(self.bridge.StepFailure): self.request("prepare")
+        self.assertEqual(self.api.states[1]["state"], "failure")
+        self.assertFalse((self.state / "prepared-releases" / self.sha).exists())
+
+    def test_cancel_after_upload_prevents_activation_and_retains_package(self):
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=self.execute):
+            self.request("prepare")
+        def upload(*args, **kwargs):
+            self.execute(*args, **kwargs)
+            if self.ssh == ["upload"]: self.api.cancelled = True
+        with patch.object(self.bridge, "run", side_effect=upload), patch.object(self.bridge, "secret", return_value="fixture"):
+            with self.assertRaises(self.bridge.StepFailure): self.request("publish")
+        self.assertEqual(self.ssh, ["upload"])
+        self.assertTrue((self.state / "prepared-releases" / self.sha / "bundle.tar").exists())
+
+    def test_legacy_wrong_owner_expiry_and_changed_main_are_rejected(self):
+        env = {"GITHUB_REPOSITORY": "damascenosteven-oss/YULING-mini-app", "GITHUB_ACTOR": self.bridge.OWNER,
+               "GITHUB_REF": "refs/heads/main", "GITHUB_SHA": self.sha, "GITHUB_RUN_ID": "42", "GITHUB_RUN_ATTEMPT": "1", "OPERATION": "prepare"}
+        dep = self.api.call("/deployments", {"ref": self.sha, "environment": self.bridge.PREPARE_ENVIRONMENT,
+            "payload": {**self.phone.identity(env), "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}})
+        dep["payload"].pop("sha")
+        run = self.api.call("/actions/runs/42")
+        branch = self.api.call("/branches/main")
+        self.bridge.validate(dep, run, branch, datetime.now(timezone.utc).isoformat())
+        dep["payload"]["schema"] = 1
+        with self.assertRaises(ValueError): self.bridge.validate(dep, run, branch, datetime.now(timezone.utc).isoformat())
+        dep["payload"]["schema"] = 2
+        for modified in ({**run, "actor": {"login": "intruder"}}, {**run, "status": "completed"}):
+            with self.assertRaises(ValueError): self.bridge.validate(dep, modified, branch, datetime.now(timezone.utc).isoformat())
+        with self.assertRaises(ValueError): self.bridge.validate(dep, run, {**branch, "commit": {"sha": "b" * 40}}, datetime.now(timezone.utc).isoformat())
+
+    def test_rollback_never_constructs_a_package(self):
+        with patch.object(self.bridge, "run", side_effect=self.execute), patch.object(self.bridge, "secret", return_value="fixture"), \
+                patch.object(self.bridge, "prepare_sources", side_effect=AssertionError("rollback cannot fetch")):
+            self.request("rollback")
+        self.assertEqual(self.ssh, ["rollback"])
+
+    def test_valid_prepare_reuses_package_without_audit_or_source_access(self):
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=self.execute):
+            self.request("prepare")
+        with patch.object(self.bridge, "prepare_sources", side_effect=AssertionError("must reuse")), \
+                patch.object(self.bridge, "run", side_effect=AssertionError("must not rebuild/audit")):
+            self.request("prepare")
+        self.assertEqual(self.api.states[2]["state"], "success")
+
+    def test_main_change_during_preparation_never_accepts_package(self):
+        def changed(*args, **kwargs):
+            self.execute(*args, **kwargs)
+            if str(args[1]).endswith("verify-image.py"): self.api.main_sha = "b" * 40
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=changed):
+            with self.assertRaises(self.bridge.StepFailure): self.request("prepare")
+        self.assertFalse((self.state / "prepared-releases" / self.sha).exists())
+        self.assertEqual(self.ssh, [])
+
+    def test_upload_failure_is_not_retried_or_activated(self):
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=self.execute):
+            self.request("prepare")
+        def failed(*args, **kwargs):
+            self.execute(*args, **kwargs)
+            raise OSError("fixture interrupted transport")
+        with patch.object(self.bridge, "run", side_effect=failed), patch.object(self.bridge, "secret", return_value="fixture"):
+            with self.assertRaises(self.bridge.StepFailure): self.request("publish")
+        self.assertEqual(self.ssh, ["upload"])
+        self.bridge.handle(self.api, self.api.deployments[1], self.config, self.state)
+        self.assertEqual(self.ssh, ["upload"])
+
+    def test_missing_or_expired_package_cannot_publish_and_next_request_can_prepare(self):
+        with self.assertRaises(self.bridge.StepFailure): self.request("publish")
+        self.api.run += 1
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=self.execute):
+            self.request("prepare")
+        with patch.object(self.bridge.prepared, "now_utc", return_value=datetime.now(timezone.utc) + timedelta(hours=25)), \
+                patch.object(self.bridge, "run", side_effect=AssertionError("expired package must not upload")):
+            with self.assertRaises(self.bridge.StepFailure): self.request("publish")
+        self.assertEqual(self.ssh, [])
+
+    def test_damaged_package_reports_inspection_instead_of_reprepare_loop(self):
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=self.execute):
+            self.request("prepare")
+        (self.state / "prepared-releases" / self.sha / "bundle.tar").write_bytes(b"damaged")
+        with self.assertRaises(self.bridge.StepFailure): self.request("publish")
+        self.assertIn("inspect workstation package", self.api.states[2]["description"])
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

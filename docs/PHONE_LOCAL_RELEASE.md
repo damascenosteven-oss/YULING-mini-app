@@ -57,7 +57,7 @@ python3 /home/USER/YULING-mini-app/deploy/test/local-bridge.py \
    这个命令不创建发布请求、不构建镜像，也不连接服务器。若检查或下载失败，先看错误阶段，
    不要把缓存命中当作 GitHub 检查通过。
 
-## 每次发布
+## 每次准备和发布（Issue #24 合并并更新电脑接力后）
 
 1. 在电脑的 Ubuntu WSL 运行：
 
@@ -67,13 +67,27 @@ python3 /home/USER/YULING-mini-app/deploy/test/local-bridge.py \
 ```
 
    看到接力程序持续运行后，再在手机 GitHub App 或 Safari 中进入本仓库
-   **Actions → PPT test site — publish or rollback → Run workflow**。
-2. 选择 `main` 和 `publish`。工作流只提交小型请求；镜像在电脑构建，
-   电脑校验后通过现有受限 SSH 入口直接上传。手机 Actions 运行会等待电脑
-   回报真正成功或失败。构建和两次 12 页捕获可能需要较长时间。
-3. 成功后打开 `https://ppt-test.zhuwenjie.online`，用邀请码登录，
+   **Actions → PPT test site — prepare, publish or rollback → Run workflow**。
+2. 先选择 `main` 和 `prepare`。电脑获取固定源码、准备依赖、执行完整及生产审计、
+   正式构建和两次 12 页捕获。成功摘要显示“准备版本”、完整提交和审计有效期，
+   此阶段不连接服务器，也不代表测试站已更新。
+3. 准备成功后，重新点 **Run workflow**，选择 `main` 和 `publish`。
+   电脑只校验同一提交的完整包，通过受限 SSH 上传并启用；不重新下载、构建或审计。
+   若 main 已变化、包缺失或审计超过 24 小时，工作流拒绝发布并提示先准备。
+4. 发布成功后打开 `https://ppt-test.zhuwenjie.online`，用邀请码登录，
    实际生成一份普通 12 页 PPT，核对 DeepSeek、COS 写入/读取、手机预览、
    分享、资源占用及原站健康。这些业务检查未过时不能称发布验收通过。
+
+完整包在状态目录的 `prepared-releases/`，只保留最近两个已接受版本。
+同一提交 24 小时内再次 prepare 会校验复用；过期后再次 prepare 只重新执行
+两份审计，不重建包或重复捕获。审计失败仍停止，损坏包不能借刷新审计恢复。
+不要手工编辑包、摘要、审计或接受记录。
+缺包/过期时提示重新 prepare；若提示 `inspect workstation package`，表示包或证据损坏，
+应保留电脑日志并检查本机文件，不能靠反复点击 prepare 或改摘要放行。
+
+prepare 使用独立的请求环境 `ppt-test-local-prepare`；publish/rollback 使用
+`ppt-test-local-relay`。它们共用现有 `ppt-test` 工作流保护和令牌权限，不需增加密钥。
+旧 schema 1 的工作流记录不重跑；必须从合并后的 main 新建请求。
 
 ## 回滚与失败
 
@@ -82,6 +96,8 @@ python3 /home/USER/YULING-mini-app/deploy/test/local-bridge.py \
 请求超时或校验错误都停止，不自动重试或切换版本。仅在缺少指定源码提交时，
 Git 获取最多尝试三次，每次限时 90 秒，等待 2 秒、5 秒；上传、服务器切换和
 整个发布请求仍只执行一次。
+准备时审计只对网络错误、429/5xx 最多尝试三次，每次 90 秒，间隔 2/5 秒；
+发现漏洞或响应不完整立即失败。审计移出 Docker 缓存层，每次需要刷新时实际联网。
 预热运行环境文件时每次下载限时 10 分钟，连续 120 秒无进展即失败，
 两次重试间隔 2 秒、5 秒。某次请求构建失败会记为失败，接力继续等待新的手机请求；
 不会重试该请求。若缓存提示正在使用，先确认是否另有预热或发布进程，不要直接删除锁文件。

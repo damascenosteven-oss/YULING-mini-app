@@ -73,6 +73,14 @@
         "plan_sha256": "387d4d37007b2229bcde66ea6a40bbac603ead8f5a571d008ac79c48bb59a1de",
         "adr": "docs/adr/0010-pnpm-offline-release-cache.md",
         "adr_sha256": "ed90fcb72a9e88a74b5be1c9a7819f839611b32e5de3c2ecb6f4aa133a4a90ef"
+      },
+      "24": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/24",
+        "approval_source": "Owner confirmed the two-stage prepare/publish plan and explicitly requested execution on 2026-10-29. Code, tests, Issue-branch push and review PR authorized. Owner retains merge and actual phone prepare/publish/rollback.",
+        "plan": "docs/plans/issue-24-prepared-release.md",
+        "plan_sha256": "d2dcc5311d59d31704f9c405542de47e07252fb4a8d6959c57e2b148af63efe6",
+        "adr": "docs/adr/0011-prepared-release.md",
+        "adr_sha256": "382bff13e548f9dc9906f646f84352d85de981ae572f2ce7225eab51adc3fc06"
       }
     }
   }

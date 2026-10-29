@@ -37,8 +37,7 @@ RUN python -c "import pathlib,re; s=pathlib.Path('/tmp/integration.log').read_te
 RUN pnpm test:ppt:golden:geometry \
     && env -u NODE_ENV pnpm build \
     && node deploy/test/build-smoke.mjs
-RUN pnpm audit --json > /tmp/audit-full.json || { cat /tmp/audit-full.json; exit 1; }
-RUN pnpm audit --prod --json > /tmp/audit-prod.json || { cat /tmp/audit-prod.json; exit 1; }
+# Fresh full/production audits are mandatory in build-image.py, outside cached layers.
 RUN pnpm prune --prod
 
 FROM runtime AS application

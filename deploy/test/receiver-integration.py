@@ -4,6 +4,7 @@ Uses a disposable receiver container, never SSHes to a user-supplied host. Refus
 to start if the Docker engine already contains PPT deployment resources.
 """
 import argparse
+from datetime import datetime, timezone, timedelta
 import gzip
 import hashlib
 import importlib.util
@@ -15,6 +16,9 @@ import tarfile
 import tempfile
 import time
 import uuid
+import os
+import sys
+from unittest.mock import patch
 from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parents[2]
@@ -72,6 +76,73 @@ CMD ["node","dist/server.js"]
         archive.add(image, arcname="image.tar.gz")
         archive.add(directory / "release.json", arcname="release.json")
     return rid, tag, bundle
+
+
+def prepared_entry(output, bundle, ssh, client, key, known):
+    """Transaction fixture only: real relay handler -> real client CLI -> real SSH."""
+    import prepared_release as prepared
+    spec = importlib.util.spec_from_file_location("prepared_bridge_entry", HERE / "deploy/test/local-bridge.py")
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    manifest = json.loads(bundle.with_name("release.json").read_text())
+    source = manifest["app_sha"]
+    state = output / "prepared-entry-state"
+    state.mkdir(mode=0o700)
+    package = prepared.root_directory(state) / source
+    package.mkdir()
+    shutil.copyfile(bundle, package / "bundle.tar")
+    shutil.copyfile(bundle.with_name("release.json"), package / "release.json")
+    (package / "bundle.sha256").write_text(sha(bundle) + "  bundle.tar\n")
+    shutil.copyfile(HERE / "deploy/test/ssh-client.py", package / "ssh-client.py")
+    inputs = {k: "d" * 64 for k in prepared.INPUTS}
+    (package / "inputs.json").write_text(json.dumps(inputs))
+    (package / "verification.json").write_text(json.dumps({"schema": 1, "app_sha": source,
+        "engine_sha": ENGINE, "image_id": manifest["image_id"], "source_dirty": False,
+        "pages": 12, "captures": 2, "differences": 0}))
+    audits = package / "audits/fixture"
+    audits.mkdir(parents=True)
+    (audits / "audit.json").write_text(json.dumps({**inputs, "audited_at": datetime.now(timezone.utc).isoformat()}))
+    for name in ("audit-full.json", "audit-prod.json"):
+        (audits / name).write_text(json.dumps({"metadata": {"vulnerabilities": {
+            k: 0 for k in ("info", "low", "moderate", "high", "critical")}}}))
+    prepared.seal(package, source, "fixture")
+    dep = {"id": 99, "sha": source, "ref": source, "environment": bridge.ENVIRONMENT,
+           "creator": {"login": "github-actions[bot]"}, "payload": {"schema": 2, "operation": "publish",
+           "run_id": 42, "attempt": 1, "actor": bridge.OWNER,
+           "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}}
+    class API:
+        def __init__(self): self.state = "pending"
+        def call(self, route, data=None):
+            if data is not None: self.state = data["state"]; return {}
+            if route.startswith("/actions/runs/"):
+                return {"id": 42, "run_attempt": 1, "event": "workflow_dispatch", "head_branch": "main",
+                        "head_sha": source, "status": "in_progress", "path": ".github/workflows/test-site.yml",
+                        "actor": {"login": bridge.OWNER}}
+            if route == "/branches/main": return {"commit": {"sha": source}, "protected": True}
+            if "/check-runs" in route:
+                return {"check_runs": [{"name": n, "head_sha": source, "conclusion": "success", "id": i}
+                                       for i, n in enumerate(bridge.CHECKS)]}
+            if "/statuses" in route: return [{"state": self.state}]
+            raise AssertionError(route)
+    api = API()
+    actual_request = client.request
+    def execute(*args, env=None):
+        assert str(args[1]).endswith("ssh-client.py"), "publish attempted preparation"
+        # Only the credential-free fixture address/port is substituted here.
+        with patch.dict(os.environ, env), patch.object(sys, "argv", list(map(str, args[1:]))), \
+                patch.object(client, "request", side_effect=lambda command, header, data=None: actual_request(ssh, header, data)), \
+                patch.object(client, "external_port_closed"):
+            client.main()
+    known.chmod(0o600)
+    config = {"state_dir": str(state), "host": "127.0.0.1", "ssh_key": str(key), "known_hosts": str(known)}
+    with patch.object(bridge, "run", side_effect=execute), \
+            patch.object(bridge, "prepare_sources", side_effect=AssertionError("publish attempted source retrieval")):
+        bridge.handle(api, dep, config, state)
+    assert api.state == "success"
+    assert client.request(ssh, {"op": "status"})["current"] == manifest["release"]
+    (output / "prepared-entry.json").write_text(json.dumps({"passed": True,
+        "fixture_evidence_only": True, "entry": "schema2 relay -> package -> client CLI -> restricted SSH -> Docker"}))
+    print("PASS: prepared package real relay/client SSH entry; no build, registry or audit at publish", flush=True)
 
 
 def main():
@@ -164,10 +235,13 @@ f=p/'authorized_keys';f.write_text('restrict,command="sudo -n /usr/bin/python3 -
                     print("PASS: corrupt upload rejected", flush=True)
                 else:
                     raise AssertionError("Corrupt upload accepted")
-                client.request(ssh, header, bundle)
-                if index < 2:
-                    assert client.request(ssh, {"op": "deploy", "release": rid})["current"] == rid
+                if index == 0:
+                    prepared_entry(output, bundle, ssh, client, key, known)
                 else:
+                    client.request(ssh, header, bundle)
+                if index == 1:
+                    assert client.request(ssh, {"op": "deploy", "release": rid})["current"] == rid
+                elif index == 2:
                     try:
                         client.request(ssh, {"op": "deploy", "release": rid})
                     except RuntimeError as error:
