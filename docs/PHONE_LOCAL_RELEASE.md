@@ -82,6 +82,8 @@ python3 /home/USER/YULING-mini-app/deploy/test/local-bridge.py \
 同一提交 24 小时内再次 prepare 会校验复用；过期后再次 prepare 只重新执行
 两份审计，不重建包或重复捕获。审计失败仍停止，损坏包不能借刷新审计恢复。
 不要手工编辑包、摘要、审计或接受记录。
+缺包/过期时提示重新 prepare；若提示 `inspect workstation package`，表示包或证据损坏，
+应保留电脑日志并检查本机文件，不能靠反复点击 prepare 或改摘要放行。
 
 prepare 使用独立的请求环境 `ppt-test-local-prepare`；publish/rollback 使用
 `ppt-test-local-relay`。它们共用现有 `ppt-test` 工作流保护和令牌权限，不需增加密钥。

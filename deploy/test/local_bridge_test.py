@@ -248,5 +248,12 @@ class ContractTests(unittest.TestCase):
             with self.assertRaises(self.bridge.StepFailure): self.request("publish")
         self.assertEqual(self.ssh, [])
 
+    def test_damaged_package_reports_inspection_instead_of_reprepare_loop(self):
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), patch.object(self.bridge, "run", side_effect=self.execute):
+            self.request("prepare")
+        (self.state / "prepared-releases" / self.sha / "bundle.tar").write_bytes(b"damaged")
+        with self.assertRaises(self.bridge.StepFailure): self.request("publish")
+        self.assertIn("inspect workstation package", self.api.states[2]["description"])
+
 
 if __name__ == "__main__": unittest.main()

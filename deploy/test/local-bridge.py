@@ -380,8 +380,9 @@ def handle(api, deployment, config, state_dir):
         try:
             step = getattr(error, "step", "request_validation")
             code = getattr(error, "code", "operation_failed")
+            hint = ("; run prepare" if code.startswith("prepare_required_") else "; inspect workstation package") if step == "prepared_package" else "; inspect workstation log"
             status(api, identity, "failure", "Stopped at " + step + ": " + code
-                   + ("; run prepare" if step == "prepared_package" else "; inspect workstation log"))
+                   + hint)
         except Exception:
             print("Failed to report request status; request stays recorded", flush=True)
         print(f"Request {identity}: failed at {getattr(error, 'step', 'request_validation')}", flush=True)
