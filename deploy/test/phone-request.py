@@ -71,6 +71,8 @@ def summary(info, state, description):
     labels = {"prepare": "准备版本", "publish": "发布版本", "rollback": "回滚上一版"}
     next_step = ("准备成功后可运行 main → publish；服务器尚未切换。" if info["operation"] == "prepare"
                  else "发布成功后仍需打开测试站并实际生成普通 PPT 验收。")
+    if state == "failure" and "image_permission_denied" in description:
+        next_step = "镜像内运行文件权限检查失败，本次包未被接受或上传；保留电脑日志，修复后新建 prepare 请求。"
     with open(path, "a", encoding="utf-8") as file:
         file.write("## " + labels[info["operation"]] + "\n\n"
                    + "提交：`" + info["sha"] + "`\n\n"

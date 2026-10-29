@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +13,16 @@ from unittest.mock import patch
 
 
 class ImageDiagnostics(unittest.TestCase):
+    def test_phone_summary_explains_image_permission_failure(self):
+        spec = importlib.util.spec_from_file_location("phone_summary", Path(__file__).with_name("phone-request.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / "summary.md"
+            with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary)}):
+                module.summary({"operation": "prepare", "sha": "a" * 40}, "failure", "image_permission_denied")
+            self.assertIn("镜像内运行文件权限检查失败", summary.read_text(encoding="utf-8"))
+
     def test_permission_failure_is_classified_without_process_output(self):
         spec = importlib.util.spec_from_file_location("verify_image", Path(__file__).with_name("verify-image.py"))
         module = importlib.util.module_from_spec(spec)
