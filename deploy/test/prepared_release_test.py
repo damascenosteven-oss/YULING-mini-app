@@ -58,7 +58,8 @@ class PreparedTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.m.validate(p, self.sha, now=self.now)
         with self.assertRaises(ValueError): self.m.refresh(p, p / "audits/initial", self.sha, now=self.now)
         (p / "receipt.json").unlink()
-        with self.assertRaises(ValueError): self.m.validate(p, self.sha, now=self.now)
+        with self.assertRaisesRegex(ValueError, "prepared_evidence_missing"):
+            self.m.validate(p, self.sha, now=self.now)
 
     def test_lock_refuses_concurrent_operations(self):
         with self.m.locked(self.root):

@@ -46,13 +46,14 @@ def regular(path):
 
 
 def safe_tree(directory):
-    require(not directory.is_symlink() and directory.is_dir(), "prepare_required_missing_package")
+    require(directory.exists() or directory.is_symlink(), "prepare_required_missing_package")
+    require(not directory.is_symlink() and directory.is_dir(), "unsafe_package_directory")
     for path in directory.rglob("*"):
         require(not path.is_symlink() and (path.is_dir() or regular(path)), "unsafe_package_file")
 
 
 def read_json(path):
-    require(regular(path), "prepare_required_missing_evidence")
+    require(regular(path), "prepared_evidence_missing")
     try:
         data = json.loads(path.read_text())
     except (ValueError, OSError):
