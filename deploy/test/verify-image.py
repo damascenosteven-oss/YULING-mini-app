@@ -31,13 +31,29 @@ def main():
         runtime = receiver.DockerRuntime({})
         runtime.call = lambda *args, **kwargs: run("docker", *args)
         runtime.readiness(name)
-        print(run("docker", "exec", name, "node", "dist/release-smoke.js", "quick"))
+        quick = run("docker", "exec", name, "node", "dist/release-smoke.js", "quick")
+        print(quick)
+        checked = json.loads(quick)
+        expected_source = {"app_sha": info["app_sha"],
+                           "engine_sha": "be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192", "source_dirty": False}
+        if checked.get("status") != "passed" or checked.get("pages") != 12 or checked.get("source") != expected_source:
+            raise RuntimeError("Final image source or smoke result mismatch")
         print(run("docker", "exec", name, "node", "dist/release-smoke.js", "repeat", "/tmp/packaged-candidate"))
         run("docker", "cp", name + ":/tmp/packaged-candidate", evidence)
         stats = run("docker", "exec", name, "sh", "-c",
                     "cat /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory.events")
         (args.build_output / "image-memory.txt").write_text(stats)
         print(stats)
+        if any(int(line.split()[1]) != 0 for line in stats.splitlines()[1:] if line.startswith(("oom ", "oom_kill "))):
+            raise RuntimeError("Final image exceeded its memory budget")
+        result = json.loads((evidence / "result.json").read_text())
+        if result.get("source") != expected_source or result.get("pages") != 12 or result.get("differences") != []:
+            raise RuntimeError("Final image repeatability evidence mismatch")
+        manifest = json.loads((args.build_output / "release.json").read_text())
+        (args.build_output / "verification.json").write_text(json.dumps({"schema": 1,
+            "app_sha": info["app_sha"], "engine_sha": expected_source["engine_sha"],
+            "image_id": manifest["image_id"], "source_dirty": False,
+            "pages": 12, "captures": 2, "differences": 0}))
     finally:
         # Only the random container created by this invocation; no images/volumes/prune.
         subprocess.run(["docker", "container", "rm", "-f", name], check=False, capture_output=True)

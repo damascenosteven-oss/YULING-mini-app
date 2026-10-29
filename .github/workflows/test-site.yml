@@ -1,13 +1,13 @@
-name: PPT test site — publish or rollback
+name: PPT test site — prepare, publish or rollback
 
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: 'publish：发布测试站；rollback：回滚上一成功版'
+        description: 'prepare：准备版本；publish：发布已准备版本；rollback：回滚上一成功版'
         required: true
         type: choice
-        options: [publish, rollback]
+        options: [prepare, publish, rollback]
 
 permissions:
   contents: read

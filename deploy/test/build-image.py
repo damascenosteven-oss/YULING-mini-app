@@ -195,6 +195,18 @@ def dependency_toolchain(downloads, stage, lock):
     return node, pnpm
 
 
+def audit_dependencies(target, downloads, lock):
+    from release_audit import run_audits
+    with tempfile.TemporaryDirectory(prefix="audit-", dir=target) as directory:
+        stage = Path(directory)
+        node, pnpm = dependency_toolchain(downloads, stage, lock)
+        project = stage / "project"
+        project.mkdir()
+        for name in ("package.json", "pnpm-lock.yaml"):
+            shutil.copyfile(HERE / name, project / name)
+        return run_audits(project, node, pnpm, target / "fresh-audits", sha(HERE / "deploy/test/runtime-lock.json"))
+
+
 def populate_dependency_store(stage, downloads, lock):
     node, pnpm = dependency_toolchain(downloads, stage, lock)
     store = stage / "store"
@@ -340,12 +352,20 @@ def main():
     parser.add_argument("--runtime-seed-dir", type=Path)
     parser.add_argument("--dependency-cache", type=Path)
     parser.add_argument("--dependency-offline", action="store_true")
+    parser.add_argument("--audit-only", action="store_true")
     args = parser.parse_args()
     target = args.output.resolve()
     if target.is_relative_to(HERE):
         raise RuntimeError("Build evidence must be outside the application repository")
     target.mkdir(parents=True, exist_ok=True)
     lock = json.loads((HERE / "deploy/test/runtime-lock.json").read_text())
+    if args.audit_only:
+        if args.prepare_only:
+            raise RuntimeError("Audit-only and cache-only are separate operations")
+        downloads = prepare_downloads(target, lock, args.runtime_cache, args.runtime_offline, args.runtime_seed_dir)
+        audit_dependencies(target, downloads, lock)
+        print("Fresh full and production audits passed")
+        return
     app_sha = output("git", "-C", HERE, "rev-parse", "HEAD")
     dirty = output("git", "-C", HERE, "status", "--porcelain")
     if dirty and not args.development:
@@ -361,6 +381,7 @@ def main():
     if args.prepare_only:
         print("Pinned runtime, engine and dependency contexts verified")
         return
+    audit_dependencies(target, downloads, lock)
     run("docker", "build", "--pull=false", "--build-context", "engine=" + str(engine),
         "--build-context", "runtime_downloads=" + str(downloads),
         "--build-context", "dependency_store=" + str(dependency_store), "--build-arg", "APP_SHA=" + app_sha,
@@ -405,4 +426,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from release_audit import AuditFailure
+    try:
+        main()
+    except AuditFailure as error:
+        print(str(error), file=sys.stderr, flush=True)
+        sys.exit(4)

@@ -17,11 +17,13 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import prepared_release as prepared
 
 OWNER = "damascenosteven-oss"
 REPO = "YULING-mini-app"
 BASE = f"https://api.github.com/repos/{OWNER}/{REPO}"
 ENVIRONMENT = "ppt-test-local-relay"
+PREPARE_ENVIRONMENT = "ppt-test-local-prepare"
 # engineering-guard is a PR-only check enforced by branch protection. The
 # merged main SHA has its own app and release checks but no PR check run.
 CHECKS = {"app-checks", "release-checks"}
@@ -32,8 +34,9 @@ ENGINE_SHA = "be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192"
 
 
 class StepFailure(RuntimeError):
-    def __init__(self, step):
+    def __init__(self, step, code="operation_failed"):
         self.step = step
+        self.code = code
         super().__init__("local release failed at " + step)
 
 
@@ -43,14 +46,15 @@ def timestamp(value):
 
 def validate(deployment, run, branch, now):
     payload = deployment.get("payload")
-    if not isinstance(payload, dict) or payload.get("schema") != 1:
+    if not isinstance(payload, dict) or type(payload.get("schema")) is not int or payload["schema"] != 2:
         raise ValueError("unsupported request")
-    if deployment.get("environment") != ENVIRONMENT or deployment.get("creator", {}).get("login") != "github-actions[bot]":
+    environment = PREPARE_ENVIRONMENT if payload.get("operation") == "prepare" else ENVIRONMENT
+    if deployment.get("environment") != environment or deployment.get("creator", {}).get("login") != "github-actions[bot]":
         raise ValueError("untrusted request origin")
     sha = deployment.get("sha")
     if not isinstance(sha, str) or not SHA.fullmatch(sha) or deployment.get("ref") != sha:
         raise ValueError("invalid commit binding")
-    if payload.get("operation") not in ("publish", "rollback"):
+    if payload.get("operation") not in ("prepare", "publish", "rollback"):
         raise ValueError("invalid operation")
     if type(payload.get("run_id")) is not int or type(payload.get("attempt")) is not int:
         raise ValueError("invalid workflow identity")
@@ -189,6 +193,7 @@ def ensure_cached_source(cache, source, sha):
     try:
         if cache.exists() or cache.is_symlink():
             if verify_source(cache, source, sha):
+                subprocess.run(["git", "-C", str(cache), "update-ref", "refs/heads/pinned", sha], check=True)
                 print("Verified source cache hit: " + cache.name, flush=True)
                 return cache
             target = cache
@@ -256,57 +261,92 @@ def warm_cache(api, state_dir, seed_dir=None):
     print("Verified source, pinned runtime and dependency caches ready for main " + sha, flush=True)
 
 
+def prepare_package(api, deployment, config, root, phase):
+    sha = deployment["sha"]
+    package = root / sha
+    if package.exists() or package.is_symlink():
+        info = prepared.validate(package, sha, fresh=False)
+        if prepared.now_utc() < prepared.timestamp(info["expires_at"]):
+            return prepared.validate(package, sha)
+    else:
+        info = None
+    with tempfile.TemporaryDirectory(prefix="yuling-prepare-") as directory:
+        checkout = Path(directory) / "app"
+        output = Path(directory) / "output"
+        phase("source_preparation")
+        engine = prepare_sources(Path(config["state_dir"]), sha, checkout)
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in ("GH_DEPLOY_TOKEN", "DEPLOY_SSH_KEY", "SSH_KNOWN_HOSTS")}
+        environment.update({"GITHUB_SHA": sha, "GITHUB_REF": "refs/heads/main",
+                            "GITHUB_RUN_ID": str(deployment["payload"]["run_id"]),
+                            "GITHUB_RUN_ATTEMPT": str(deployment["payload"]["attempt"])})
+        command = [sys.executable, checkout / "deploy/test/build-image.py", "--output", output,
+                   "--runtime-cache", Path(config["state_dir"]) / "runtime-cache"]
+        if info is not None:
+            phase("audit_refresh")
+            run(*command, "--audit-only", "--runtime-offline", env=environment)
+            if checked_request(api, deployment) != "prepare":
+                raise ValueError("request changed during audit refresh")
+            return prepared.refresh(package, output / "fresh-audits", sha)
+        phase("package_build_and_audits")
+        run(*command, "--engine", engine, "--dependency-cache",
+            Path(config["state_dir"]) / "dependency-cache", env=environment)
+        phase("image_visual_checks")
+        run(sys.executable, checkout / "deploy/test/verify-image.py", "--build-output", output, env=environment)
+        if checked_request(api, deployment) != "prepare":
+            raise ValueError("request changed during preparation")
+        result = prepared.accept(root, output, checkout, sha)
+        prepared.retain_two(root, sha)
+        return result
+
+
 def build_and_transfer(api, deployment, operation, config):
     sha = deployment["sha"]
-    step = "checkout"
+    step = "prepared_package" if operation == "publish" else "preparation" if operation == "prepare" else "request_recheck"
+    def phase(value):
+        nonlocal step
+        step = value
+        print(f"Request {deployment['id']}: phase {value}", flush=True)
+        status(api, deployment["id"], "in_progress", operation + ": " + value)
     try:
-        with tempfile.TemporaryDirectory(prefix="yuling-local-release-") as directory:
-            root = Path(directory)
-            checkout = root / "app"
-            bundle_dir = root / "output"
+        root = prepared.root_directory(config["state_dir"])
+        with prepared.locked(root):
+            if operation == "prepare":
+                result = prepare_package(api, deployment, config, root, phase)
+                if checked_request(api, deployment) != operation:
+                    raise ValueError("preparation request changed")
+                return result
             if operation == "publish":
-                engine = prepare_sources(Path(config["state_dir"]), sha, checkout)
-                clean_env = {key: value for key, value in os.environ.items()
-                             if key not in ("GH_DEPLOY_TOKEN", "DEPLOY_SSH_KEY", "SSH_KNOWN_HOSTS")}
-                clean_env.update({"GITHUB_SHA": sha, "GITHUB_REF": "refs/heads/main",
-                                  "GITHUB_RUN_ID": str(deployment["payload"]["run_id"]),
-                                  "GITHUB_RUN_ATTEMPT": str(deployment["payload"]["attempt"])})
-                step = "pinned_image_build"
-                run(sys.executable, checkout / "deploy/test/build-image.py", "--output", bundle_dir,
-                    "--engine", engine, "--runtime-cache", Path(config["state_dir"]) / "runtime-cache",
-                    "--runtime-offline", "--dependency-cache", Path(config["state_dir"]) / "dependency-cache",
-                    "--dependency-offline", env=clean_env)
-                step = "image_visual_checks"
-                run(sys.executable, checkout / "deploy/test/verify-image.py", "--build-output", bundle_dir, env=clean_env)
-                step = "bundle_digest"
-                bundle = bundle_dir / "bundle.tar"
-                expected = (bundle_dir / "bundle.sha256").read_text().split()[0]
-                with bundle.open("rb") as source:
-                    actual = hashlib.file_digest(source, "sha256").hexdigest()
-                if actual != expected:
-                    raise ValueError("verified bundle checksum changed")
-            step = "request_recheck"
+                package = root / sha
+                prepared.validate(package, sha)
+                bundle = package / "bundle.tar"
+                client = package / "ssh-client.py"
+            else:
+                client = Path(config["trusted_client"])
+            phase("request_recheck")
             if checked_request(api, deployment) != operation:
                 raise ValueError("request changed before server operation")
-            deploy_env = {key: value for key, value in os.environ.items()
-                          if key != "GH_DEPLOY_TOKEN"}
-            deploy_env.update({"GITHUB_SHA": sha, "GITHUB_REF": "refs/heads/main",
-                               "DEPLOY_HOST": config["host"],
+            deploy_env = {key: value for key, value in os.environ.items() if key != "GH_DEPLOY_TOKEN"}
+            deploy_env.update({"GITHUB_SHA": sha, "GITHUB_REF": "refs/heads/main", "DEPLOY_HOST": config["host"],
                                "DEPLOY_SSH_KEY": secret(Path(config["ssh_key"])),
                                "SSH_KNOWN_HOSTS": secret(Path(config["known_hosts"]))})
-            client = checkout / "deploy/test/ssh-client.py" if operation == "publish" else Path(config["trusted_client"])
             if operation == "publish":
-                step = "restricted_upload"
+                phase("restricted_upload")
                 run(sys.executable, client, "publish", "--bundle", bundle, "--stage", "upload", env=deploy_env)
-                step = "post_upload_recheck"
-                checked_request(api, deployment)
-                step = "server_activation"
+                phase("post_upload_recheck")
+                if checked_request(api, deployment) != operation:
+                    raise ValueError("request changed after upload")
+                prepared.validate(package, sha)  # Includes freshness at activation, not just upload start.
+                phase("server_activation")
                 run(sys.executable, client, "publish", "--bundle", bundle, "--stage", "activate", env=deploy_env)
             else:
-                step = "restricted_rollback"
+                phase("restricted_rollback")
                 run(sys.executable, client, "rollback", env=deploy_env)
     except Exception as error:
-        raise StepFailure(step) from error
+        if isinstance(error, subprocess.CalledProcessError) and error.returncode == 4 and step == "package_build_and_audits":
+            step = "dependency_audit"
+        code = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[a-z_]{1,80}", str(error)) else "operation_failed"
+        raise StepFailure(step, code) from error
 
 
 def secret(path):
@@ -330,22 +370,29 @@ def handle(api, deployment, config, state_dir):
     try:
         operation = checked_request(api, deployment)
         status(api, identity, "in_progress", "Local workstation accepted request")
-        build_and_transfer(api, deployment, operation, config)
-        status(api, identity, "success", "Restricted server operation completed")
+        result = build_and_transfer(api, deployment, operation, config)
+        message = ("Prepared " + deployment["sha"][:12] + "; audits until " + result["expires_at"]
+                   if operation == "prepare" else "Restricted server operation completed")
+        status(api, identity, "success", message)
         print(f"Request {identity}: {operation} completed", flush=True)
     except Exception as error:
         # Do not publish exception text; it can contain subprocess or credential detail.
         try:
-            status(api, identity, "failure", "Local release stopped; inspect workstation log")
+            step = getattr(error, "step", "request_validation")
+            code = getattr(error, "code", "operation_failed")
+            status(api, identity, "failure", "Stopped at " + step + ": " + code
+                   + ("; run prepare" if step == "prepared_package" else "; inspect workstation log"))
         except Exception:
-            pass
+            print("Failed to report request status; request stays recorded", flush=True)
         print(f"Request {identity}: failed at {getattr(error, 'step', 'request_validation')}", flush=True)
         raise
 
 
 def poll_once(api, config, state_dir):
-    deployments = api.call("/deployments?environment=" + ENVIRONMENT + "&per_page=30")
-    for deployment in reversed(deployments):
+    deployments = []
+    for environment in (ENVIRONMENT, PREPARE_ENVIRONMENT):
+        deployments.extend(api.call("/deployments?environment=" + environment + "&per_page=30"))
+    for deployment in sorted({d["id"]: d for d in deployments}.values(), key=lambda d: d["id"]):
         if not isinstance(deployment.get("payload"), dict):
             continue
         statuses = api.call(f"/deployments/{deployment['id']}/statuses?per_page=1")
@@ -396,8 +443,6 @@ def main():
         return
     if args.runtime_seed_dir is not None:
         raise ValueError("Runtime seed is only accepted with --warm-cache")
-    secret(Path(config["ssh_key"]))
-    secret(Path(config["known_hosts"]))
     poll_continuously(api, config, state_dir, args.once)
 
 
