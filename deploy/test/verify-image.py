@@ -6,6 +6,7 @@ import subprocess
 import sys
 import uuid
 from runtime_permissions import CHECK
+from http_evidence import atomic_json, read_json, validate_report
 
 
 def run(*args):
@@ -22,6 +23,7 @@ def main():
     if evidence.exists():
         raise RuntimeError("Use a fresh evidence directory")
     stage = "container_start"
+    keep_container = False
     try:
         run("docker", "run", "-d", "--name", name, "--cpus", "1", "--memory", "1024m",
             "--memory-swap", "1024m", "--pids-limit", "256", "--cap-drop", "ALL",
@@ -48,6 +50,8 @@ def main():
         stage = "outline_http_entry"
         print(run(sys.executable, Path(__file__).with_name("outline-entry-checks.py"),
                   "--image", info["tag"], "--output", args.build_output / "outline-entry.json"))
+        identity = json.loads(run("docker", "image", "inspect", info["tag"]))[0]["Id"]
+        validate_report(read_json(args.build_output / "outline-entry.json"), info["app_sha"], identity)
         stage = "repeatability"
         print(run("docker", "exec", name, "node", "dist/release-smoke.js", "repeat", "/tmp/packaged-candidate"))
         run("docker", "cp", name + ":/tmp/packaged-candidate", evidence)
@@ -73,12 +77,17 @@ def main():
         diagnostic = {"schema": 1, "stage": stage,
                       "code": "image_permission_denied" if denied else "image_check_failed",
                       "exit_code": getattr(error, "returncode", 1)}
-        (args.build_output / "image-check-error.json").write_text(json.dumps(diagnostic))
+        try:
+            atomic_json(args.build_output / "image-check-error.json", diagnostic)
+        except Exception:
+            keep_container = True
+            print(json.dumps({"event": "diagnostic_save_failed", "retained_container": name}), file=sys.stderr)
         print(json.dumps(diagnostic), file=sys.stderr, flush=True)
         raise SystemExit(5 if denied else 6) from None
     finally:
         # Only the random container created by this invocation; no images/volumes/prune.
-        subprocess.run(["docker", "container", "rm", "-f", name], check=False, capture_output=True)
+        if not keep_container:
+            subprocess.run(["docker", "container", "rm", "-f", name], check=False, capture_output=True)
 
 
 if __name__ == "__main__":

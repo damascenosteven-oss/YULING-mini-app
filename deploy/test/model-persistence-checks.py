@@ -2,6 +2,7 @@
 import json
 import subprocess
 import uuid
+from http_evidence import FixtureFailure, failure, resources
 
 CLIENT = r"""
 (async()=>{
@@ -30,10 +31,11 @@ CLIENT = r"""
 """
 
 
-def check(image, fixture, volume):
+def check(image, fixture, volume, record=None):
     name = 'yuling-settings-recreate-' + uuid.uuid4().hex[:12]
     def run(*args):
         return subprocess.run(list(map(str, args)), check=True, capture_output=True, text=True, timeout=120).stdout
+    keep_fixture = False
     try:
         run('docker', 'create', '--name', name, '--network', 'none',
             '--cpus', '1', '--memory', '1024m', '--memory-swap', '1024m',
@@ -50,6 +52,17 @@ def check(image, fixture, volume):
         mount = next(x for x in detail['Mounts'] if x['Destination'] == '/var/lib/yuling-ppt/model-settings')
         if mount['RW'] or result.get('key_returned') or detail['State']['OOMKilled']:
             raise AssertionError('Persistent/read-only isolation failed')
+        if record:
+            record({'persistence': result, 'recreate_resources': resources(name)})
         return result
+    except Exception as error:
+        detail = failure(error, 'persistence')
+        detail['recreate_resources'] = resources(name)
+        try:
+            if record: record(detail)
+        except Exception:
+            keep_fixture = True
+        raise FixtureFailure(detail) from None
     finally:
-        subprocess.run(['docker', 'rm', '-f', name], capture_output=True)
+        if not keep_fixture:
+            subprocess.run(['docker', 'rm', '-f', name], capture_output=True)

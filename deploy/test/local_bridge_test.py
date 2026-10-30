@@ -98,6 +98,14 @@ class ContractTests(unittest.TestCase):
         elif script.endswith("verify-image.py"):
             output = Path(args[-1])
             (output / "image-memory.txt").write_text("oom 0\n")
+            from http_evidence import CASES
+            report = {"schema": 1, "app_sha": self.sha, "image_id": "sha256:" + "b" * 64,
+                      "checker_sha256": "c" * 64, "fixture_sha256": "d" * 64,
+                      "simulated_providers": True, "cloud_calls": 0, "passed": True,
+                      "cases": [{"case": c, "passed": True, "step": "complete", "http": 200,
+                                 "elapsedMs": 1, "searches": 0, "models": 1, "network": "none",
+                                 "resources": {"available": False}} for c in CASES]}
+            (output / "outline-entry.json").write_text(json.dumps(report))
             (output / "packaged-candidate").mkdir()
             (output / "packaged-candidate/result.json").write_text("{}")
             m = json.loads((output / "release.json").read_text())
@@ -175,6 +183,21 @@ class ContractTests(unittest.TestCase):
             with self.assertRaises(self.bridge.StepFailure): self.request("prepare")
         self.assertEqual(self.api.states[1]["state"], "failure")
         self.assertFalse((self.state / "prepared-releases" / self.sha).exists())
+
+    def test_http_failure_keeps_stage_before_temporary_cleanup(self):
+        def failed(*args, **kwargs):
+            if str(args[1]).endswith("verify-image.py"):
+                import subprocess
+                output = Path(args[args.index("--build-output") + 1])
+                (output / "image-check-error.json").write_text(json.dumps({"schema": 1,
+                    "stage": "outline_http_entry", "code": "image_check_failed", "exit_code": 1}))
+                raise subprocess.CalledProcessError(6, ["private-command"])
+            self.execute(*args, **kwargs)
+        with patch.object(self.bridge, "prepare_sources", side_effect=self.source), \
+                patch.object(self.bridge, "run", side_effect=failed):
+            with self.assertRaises(self.bridge.StepFailure): self.request("prepare")
+        self.assertTrue((self.state / "1-image-check-error.json").exists(), "HTTP failure stage was discarded")
+        self.assertEqual(self.ssh, [])
 
     def test_permission_failure_reaches_phone_and_keeps_safe_diagnostic(self):
         def failed(*args, **kwargs):
