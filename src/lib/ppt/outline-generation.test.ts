@@ -151,6 +151,13 @@ test('official default model uses standard mode in both attempts and repairs the
       assert.equal(request.model, 'deepseek-flash');
       assert.equal(request.max_tokens, 8192);
     }
+    const system = (requests[0].messages as Array<{ role: string; content: string }>).find(message => message.role === 'system')?.content;
+    assert.ok(system);
+    for (const [start, end] of [['要点页示例：', '。items'], ['数据表示例：', '。headers']] as const) {
+      const example: string | undefined = system.split(start)[1]?.split(end)[0];
+      assert.ok(example);
+      assert.equal(slideSchema.safeParse(JSON.parse(example)).success, true, 'prompt example must satisfy the real slide schema');
+    }
     const second = JSON.stringify(requests[1].messages);
     assert.ok(second.includes('DRAFT_BODY_MUST_NOT_BE_LOGGED'), 'repair must actually receive the previous draft');
     assert.match(second, /slides\.1\.items/);
