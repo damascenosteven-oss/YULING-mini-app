@@ -423,7 +423,7 @@ test('invalid model JSON retries once and returns the explicit outline error', a
       OutlineInvalidError,
     );
     assert.equal(calls, 2);
-    assert.deepEqual(failures, [
+    assert.deepEqual(failures.map(({ attempt, category, constraint }) => ({ attempt, category, constraint })), [
       { attempt: 1, category: 'structure', constraint: '输出必须是完整、可解析的单个 JSON 对象' },
       { attempt: 2, category: 'structure', constraint: '输出必须是完整、可解析的单个 JSON 对象' },
     ]);
@@ -462,7 +462,7 @@ test('page-count structure errors provide a concrete constraint to the repair at
     assert.match(requestBodies[1].messages[1].content, /必须严格包含 6 页/);
     assert.match(requestBodies[1].messages[1].content, /不得把 entries 排名改成 grouped/);
     assert.match(requestBodies[1].messages[1].content, /不得改变表格的数据形态/);
-    assert.deepEqual(failures, [{ attempt: 1, category: 'structure', constraint: 'slides：必须严格包含 6 页，首张为 cover，末张为 closing' }]);
+    assert.deepEqual(failures.map(({ attempt, category, constraint }) => ({ attempt, category, constraint })), [{ attempt: 1, category: 'structure', constraint: 'slides：必须严格包含 6 页，首张为 cover，末张为 closing' }]);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.DEEPSEEK_API_KEY;

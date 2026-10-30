@@ -40,6 +40,7 @@ jobs:
             ${{ runner.temp }}/release-check/state/prepared-releases/*/packaged-candidate
             ${{ runner.temp }}/release-check/state/prepared-releases/*/image-memory.txt
             ${{ runner.temp }}/release-check/state/prepared-releases/*/verification.json
+            ${{ runner.temp }}/release-check/state/prepared-releases/*/outline-entry.json
             ${{ runner.temp }}/release-check/state/prepared-releases/*/audits
             ${{ runner.temp }}/receiver-entry/result.json
             ${{ runner.temp }}/receiver-entry/prepared-entry.json
