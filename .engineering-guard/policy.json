@@ -87,6 +87,14 @@
         "approval_source": "Owner explicitly requested implementation of the accepted prepare #12 runtime-permissions and safe-error-reporting plan on 2026-10-29. Code, tests, Issue-branch push and review PR authorized; owner retains merge and actual mobile prepare/publish/rollback. No server action.",
         "plan": "docs/plans/issue-26-runtime-permissions.md",
         "plan_sha256": "25080666a81ced515a56ac2e73a9ea4ca5966214b5d633dad40636380e8bcaed"
+      },
+      "28": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/28",
+        "approval_source": "Owner explicitly approved the complete outline-generation and repair plan in Codex on 2026-10-30 and selected standard mode. Authority: Issue worktree code/tests, Issue-branch push and review PR. No merge, server actions, deployment, paid generation or Bocha configuration.",
+        "plan": "docs/plans/issue-28-outline-repair.md",
+        "plan_sha256": "5c52adccf0ef7287332ca892426939db88e9fc7576d7bfbb27c4201da3d2b40b",
+        "adr": "docs/adr/0012-outline-generation-repair.md",
+        "adr_sha256": "04431c156a2c7466f686f12a14bf638e8d1587d47f16ca6c59080e12dc557cd7"
       }
     }
   }

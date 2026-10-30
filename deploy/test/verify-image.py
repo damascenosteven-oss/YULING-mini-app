@@ -45,6 +45,9 @@ def main():
                            "engine_sha": "be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192", "source_dirty": False}
         if checked.get("status") != "passed" or checked.get("pages") != 12 or checked.get("source") != expected_source:
             raise RuntimeError("Final image source or smoke result mismatch")
+        stage = "outline_http_entry"
+        print(run(sys.executable, Path(__file__).with_name("outline-entry-checks.py"),
+                  "--image", info["tag"], "--output", args.build_output / "outline-entry.json"))
         stage = "repeatability"
         print(run("docker", "exec", name, "node", "dist/release-smoke.js", "repeat", "/tmp/packaged-candidate"))
         run("docker", "cp", name + ":/tmp/packaged-candidate", evidence)
