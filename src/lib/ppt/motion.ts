@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { deckOutlineSchema } from './schema';
+import { UnsupportedSkillError, validateSkillDeck } from './skills';
 import type { DeckOutline, MotionMode, MotionPersona, MotionPlan, Slide, SlideMotion } from './schema';
 
 export type MotionHistory = Pick<MotionPlan, 'fingerprint' | 'recipe' | 'background' | 'transition' | 'layoutSignature'>;
@@ -153,54 +155,70 @@ export function validateMotionPlan(deck: DeckOutline): MotionPlan | undefined {
   return plan;
 }
 
+export class MotionResolutionError extends Error {
+  override name = 'MotionResolutionError';
+}
+
 export function resolveMotionPlan(
   deck: DeckOutline,
   options: { prompt?: string; mode?: MotionMode; recent?: MotionHistory[]; exclude?: string[]; seedBase?: string; preserveLayouts?: boolean } = {},
 ): DeckOutline {
+  // Validate before attempting any layout fallback; never repair illegal input here.
+  deckOutlineSchema.parse(deck);
+  validateSkillDeck(deck);
+  validateMotionPlan(deck);
   const mode = options.mode ?? deck.motionPlan?.mode ?? 'auto';
   const persona = resolvedPersona(deck, options.prompt || '', mode);
   const recent = (options.recent || []).slice(0, 5);
   const excluded = new Set([...(options.exclude || []), ...recent.map(item => item.fingerprint)]);
   const seedBase = options.seedBase || randomBytes(8).toString('hex');
-  const candidates: Array<{ plan: MotionPlan; slides: DeckOutline['slides'] }> = [];
+  type Candidate = { plan: MotionPlan; slides: DeckOutline['slides'] };
   let candidateIndex = 0;
-  for (const recipe of RECIPES[persona]) {
-    for (const background of BACKGROUNDS[persona]) {
-      for (const transition of TRANSITIONS[persona]) {
-        const seed = digest(`${seedBase}:${candidateIndex}:${recipe}:${background}:${transition}`, 16);
-        candidateIndex += 1;
-        const slides = options.preserveLayouts ? deck.slides : diversifyLayouts(deck, seed);
-        const candidateDeck = { ...deck, slides };
-        const layoutSignature = digest(`${deck.skill.id}@${deck.skill.version}|${slides.map(slide => `${slide.type}:${slide.variant}`).join('|')}`, 12);
-        const unsigned: Omit<MotionPlan, 'fingerprint'> = {
-          version: 1,
-          mode,
-          persona,
-          recipe,
-          seed,
-          background,
-          transition,
-          layoutSignature,
-          slides: createSlideMotions(candidateDeck, persona, recipe, seed),
-        };
-        candidates.push({ plan: { ...unsigned, fingerprint: fingerprint(unsigned) }, slides });
+  function candidates(preserveLayouts: boolean): Candidate[] {
+    const valid: Candidate[] = [];
+    for (const recipe of RECIPES[persona]) {
+      for (const background of BACKGROUNDS[persona]) {
+        for (const transition of TRANSITIONS[persona]) {
+          const seed = digest(`${seedBase}:${candidateIndex}:${recipe}:${background}:${transition}`, 16);
+          candidateIndex += 1;
+          const slides = preserveLayouts ? deck.slides : diversifyLayouts(deck, seed);
+          const candidateDeck = { ...deck, slides };
+          const layoutSignature = digest(`${deck.skill.id}@${deck.skill.version}|${slides.map(slide => `${slide.type}:${slide.variant}`).join('|')}`, 12);
+          const unsigned: Omit<MotionPlan, 'fingerprint'> = {
+            version: 1, mode, persona, recipe, seed, background, transition, layoutSignature,
+            slides: createSlideMotions(candidateDeck, persona, recipe, seed),
+          };
+          const plan = { ...unsigned, fingerprint: fingerprint(unsigned) };
+          const candidate = { ...candidateDeck, motionPlan: plan };
+          if (!deckOutlineSchema.safeParse(candidate).success) continue;
+          if (slides.some(slide => slide.type === 'process' && slide.steps.length > 4 && slide.variant === 'ladder')) continue;
+          try { validateSkillDeck(candidate); }
+          catch (error) {
+            if (error instanceof UnsupportedSkillError) continue;
+            throw error;
+          }
+          validateMotionPlan(candidate);
+          valid.push({ plan, slides });
+        }
       }
     }
+    return valid;
   }
-  const previous = recent[0];
-  const ranked = candidates
-    .filter(candidate => !excluded.has(candidate.plan.fingerprint))
-    .map(candidate => ({
-      candidate,
-      previousDistance: previous ? axesDistance(candidate.plan, previous) : 4,
-      totalDistance: recent.reduce((sum, item) => sum + axesDistance(candidate.plan, item), 0),
-      tie: indexFor(seedBase, candidate.plan.fingerprint, 1_000_000),
-    }))
-    .sort((left, right) => right.previousDistance - left.previousDistance || right.totalDistance - left.totalDistance || right.tie - left.tie);
-  const selected = ranked.find(item => item.previousDistance >= 3)?.candidate
-    || ranked[0]?.candidate
-    || candidates.find(candidate => candidate.plan.fingerprint !== previous?.fingerprint)
-    || candidates[0];
+  function select(choices: Candidate[]): Candidate | undefined {
+    const previous = recent[0];
+    const ranked = choices
+      .filter(candidate => !excluded.has(candidate.plan.fingerprint))
+      .map(candidate => ({
+        candidate,
+        previousDistance: previous ? axesDistance(candidate.plan, previous) : 4,
+        totalDistance: recent.reduce((sum, item) => sum + axesDistance(candidate.plan, item), 0),
+        tie: indexFor(seedBase, candidate.plan.fingerprint, 1_000_000),
+      }))
+      .sort((left, right) => right.previousDistance - left.previousDistance || right.totalDistance - left.totalDistance || right.tie - left.tie);
+    return ranked.find(item => item.previousDistance >= 3)?.candidate || ranked[0]?.candidate;
+  }
+  const selected = select(candidates(Boolean(options.preserveLayouts))) || select(candidates(true));
+  if (!selected) throw new MotionResolutionError('No valid motion candidate available');
   return { ...deck, slides: selected.slides, motionPlan: selected.plan };
 }
 

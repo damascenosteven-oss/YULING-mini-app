@@ -59,6 +59,26 @@ async function fixtureFetch(...args){const r=await fetch(...args);fixtureHttp=r.
  let built=false;
  if(adminVerified){
   if(response.status!==200)throw Error('admin configured outline failed');
+ fixtureStep='motion_refresh';
+  const refreshUrl=base+'/api/ppt/design/refresh';
+  const deniedRefresh=await fixtureFetch(refreshUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(deniedRefresh.status!==401)throw Error('refresh authentication boundary');
+  const invalidRefresh=await fixtureFetch(refreshUrl,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:'{}'});
+  if(invalidRefresh.status!==422)throw Error('refresh invalid input boundary');
+  const blocked=structuredClone(value);delete blocked.motionPlan;
+  blocked.slides[1]={id:blocked.slides[1].id,type:'process',variant:'ladder',theme:'blue',title:'实施步骤',steps:Array.from({length:6},(_,i)=>({title:`步骤${i+1}`,description:'逐项核对'}))};
+  const unavailable=await fixtureFetch(refreshUrl,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({deck:blocked,mode:'balanced'})});
+  const unavailableValue=await unavailable.json();
+  if(unavailable.status!==502||Object.keys(unavailableValue).join(',')!=='error'||!unavailableValue.error.includes('动效生成失败'))throw Error('refresh bounded failure contract');
+  const originalSlides=JSON.stringify(value.slides),originalFingerprint=value.motionPlan.fingerprint;
+  const refreshed=await fixtureFetch(base+'/api/ppt/design/refresh',{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({deck:value,mode:'balanced'})});
+  const refreshValue=await refreshed.json();
+  if(refreshed.status!==200||Object.keys(refreshValue).join(',')!=='motionPlan'||refreshValue.motionPlan.fingerprint===originalFingerprint)throw Error('motion refresh contract');
+  value.motionPlan=refreshValue.motionPlan;
+  if(JSON.stringify(value.slides)!==originalSlides)throw Error('motion refresh changed pages');
+  const {createHash}=await import('node:crypto');
+  const signature=createHash('sha256').update(`${value.skill.id}@${value.skill.version}|${value.slides.map(s=>`${s.type}:${s.variant}`).join('|')}`).digest('hex').slice(0,12);
+  if(value.motionPlan.layoutSignature!==signature)throw Error('motion refresh signature mismatch');
  fixtureStep='python_build';
   const created=await fixtureFetch(base+'/api/ppt/decks',{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify(value),signal:AbortSignal.timeout(240000)});
   const result=await created.json();if(created.status!==200)throw Error('Python build or QA failed: '+JSON.stringify(result));

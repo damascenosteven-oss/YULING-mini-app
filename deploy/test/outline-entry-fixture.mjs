@@ -3,9 +3,15 @@ import assert from 'node:assert/strict';
 import dns from 'node:dns/promises';
 import https from 'node:https';
 import { PassThrough, Writable } from 'node:stream';
-import { scryptSync } from 'node:crypto';
+import crypto, { scryptSync } from 'node:crypto';
 import { syncBuiltinESMExports } from 'node:module';
 const scenario = process.env.OUTLINE_FIXTURE_CASE;
+// Only the synchronous 8-byte motion seed is fixed. Auth, IVs and UUIDs stay native.
+const nativeRandomBytes = crypto.randomBytes;
+if (scenario === 'admin') crypto.randomBytes = function (size, callback) {
+ if (size === 8 && !callback) return Buffer.from('0000000000000001', 'hex');
+ return nativeRandomBytes.call(this, size, callback);
+};
 const marker = 'PRIVATE_DRAFT_BODY_SENTINEL';
 const originalFetch = globalThis.fetch;
 let models = 0;
