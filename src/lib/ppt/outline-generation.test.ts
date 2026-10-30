@@ -1,3 +1,4 @@
+import { modelTransport } from './model-http';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -38,6 +39,7 @@ async function scenario(
   settings: Record<string, string | undefined> = {},
 ) {
   const originalFetch = globalThis.fetch;
+  const originalTransport = modelTransport.send;
   const names = ['DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL', 'BOCHA_API_KEY'];
   const original = Object.fromEntries(names.map(name => [name, process.env[name]]));
   const requests: Array<Record<string, unknown>> = [];
@@ -49,16 +51,10 @@ async function scenario(
   for (const [name, value] of Object.entries(settings)) {
     if (value === undefined) delete process.env[name]; else process.env[name] = value;
   }
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    if (url === 'https://api.bochaai.com/v1/web-search') {
-      searches += 1;
-      return new Response(JSON.stringify({ data: { webPages: { value: Array.from({ length: 3 }, (_, index) => ({
-        name: `官方来源 ${index + 1}`, url: `https://fixture.gov.cn/report-${index}`, summary: '仅用于隔离测试的公开资料摘要。', siteName: '测试统计机构',
-      })) } } }));
-    }
+  globalThis.fetch = async () => { searches += 1; throw new Error('Search is forbidden in ordinary generation'); };
+  modelTransport.send = async (url, _key, body) => {
     assert.ok(url.endsWith('/chat/completions'), 'fixture refuses unexpected network request');
-    requests.push(JSON.parse(String(init?.body)));
+    requests.push(body);
     const response = responses[requests.length - 1];
     assert.ok(response, 'no third model request is permitted');
     return response();
@@ -66,6 +62,7 @@ async function scenario(
   try { await run(requests, () => searches); }
   finally {
     globalThis.fetch = originalFetch;
+    modelTransport.send = originalTransport;
     for (const name of names) {
       if (original[name] === undefined) delete process.env[name]; else process.env[name] = original[name];
     }
@@ -175,7 +172,6 @@ test('custom endpoint and other model do not receive a new provider parameter', 
   for (const settings of [
     { DEEPSEEK_BASE_URL: 'https://fixture.example/v1' },
     { DEEPSEEK_BASE_URL: 'https://api.deepseek.com.fixture.example' },
-    { DEEPSEEK_BASE_URL: 'http://api.deepseek.com' },
     { DEEPSEEK_MODEL: 'other-model' },
   ]) {
     await scenario([() => modelResponse(deck)], async requests => {
@@ -185,13 +181,12 @@ test('custom endpoint and other model do not receive a new provider parameter', 
   }
 });
 
-test('research is fetched once for a repair and supplied references stay valid', async () => {
+test('ordinary repair never fetches research even for current-market requests', async () => {
   await scenario([() => modelResponse(invalidDeck()), () => modelResponse(deck)], async (requests, searches) => {
     const result = await generateOutline('调查目前宁波就业市场并形成有公开资料的汇报', 6, 'project-proposal');
-    assert.equal(searches(), 3);
+    assert.equal(searches(), 0);
     assert.equal(requests.length, 2);
-    assert.equal(result.research.status, 'completed');
-    if (result.research.status === 'completed') assert.equal(result.research.sources.length, 3);
+    assert.equal(result.research.status, 'not-required');
   });
 });
 

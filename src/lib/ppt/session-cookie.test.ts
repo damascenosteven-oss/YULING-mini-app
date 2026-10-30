@@ -26,17 +26,18 @@ for (const mode of ['production', 'development']) {
       const identity = GET(new NextRequest('https://ppt.example.invalid/api/ppt/session'));
       const logout = await DELETE();
       for (const [label, response, count] of [
-        ['login', login, 2], ['identity', identity, 1], ['logout', logout, 1],
+        ['login', login, 2], ['identity', identity, 1], ['logout', logout, 2],
       ] as const) {
         const cookies = response.headers.getSetCookie();
         assert.equal(cookies.length, count, label);
         for (const cookie of cookies) {
           assert.match(cookie, /; HttpOnly/i, label);
-          assert.match(cookie, /; SameSite=lax/i, label);
+          assert.match(cookie, cookie.startsWith('yuling_ppt_admin=') ? /; SameSite=strict/i : /; SameSite=lax/i, label);
           assert.equal(/; Secure(?:;|$)/i.test(cookie), mode === 'production', label);
         }
       }
       assert.match(logout.headers.getSetCookie()[0], /Max-Age=0/i);
+      assert.ok(logout.headers.getSetCookie().some(value => value.startsWith('yuling_ppt_admin=') && value.includes('Max-Age=0')));
     } finally {
       for (const [name, value] of Object.entries(saved)) {
         if (value === undefined) delete environment[name];

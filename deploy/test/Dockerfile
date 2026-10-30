@@ -47,6 +47,7 @@ ENV HOME=/home/ppt XDG_CONFIG_HOME=/home/ppt/.config XDG_CACHE_HOME=/home/ppt/.c
 ARG APP_SHA
 ARG SOURCE_DIRTY=true
 LABEL dev.yuling.application="yuling-ppt-test" \
+      dev.yuling.model-settings="v1" \
       org.opencontainers.image.revision=$APP_SHA \
       dev.yuling.engine.revision="be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192" \
       dev.yuling.source.dirty=$SOURCE_DIRTY
@@ -61,8 +62,9 @@ COPY deploy/test/runtime-lock.json /opt/yuling/runtime-lock.json
 RUN APP_SHA="$APP_SHA" SOURCE_DIRTY="$SOURCE_DIRTY" python -c \
     "import json,os,pathlib,re; sha=os.environ['APP_SHA']; assert re.fullmatch('[0-9a-f]{40}',sha); pathlib.Path('/opt/yuling/release.json').write_text(json.dumps({'app_sha':sha,'engine_sha':'be73ccd4e811bd877fb2635fd7dfc3ca3ad8e192','source_dirty':os.environ['SOURCE_DIRTY']!='false'}))" \
     && chmod 0644 /opt/yuling/runtime-lock.json \
-    && mkdir -p /opt/yuling/app/.next/cache /home/ppt/.config /home/ppt/.cache \
-    && chown -R 10001:10001 /opt/yuling/app/.next/cache /home/ppt
+    && mkdir -p /opt/yuling/app/.next/cache /home/ppt/.config /home/ppt/.cache /var/lib/yuling-ppt/model-settings \
+    && chown -R 10001:10001 /opt/yuling/app/.next/cache /home/ppt /var/lib/yuling-ppt/model-settings \
+    && chmod 0700 /var/lib/yuling-ppt/model-settings
 USER 10001:10001
 EXPOSE 5000
 CMD ["node", "dist/server.js"]

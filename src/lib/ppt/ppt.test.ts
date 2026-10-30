@@ -1,3 +1,4 @@
+import { modelTransport } from './model-http';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
@@ -400,12 +401,12 @@ test('validation feedback contains paths and constraints without input values', 
 });
 
 test('invalid model JSON retries once and returns the explicit outline error', async () => {
-  const originalFetch = globalThis.fetch;
+  const originalFetch = modelTransport.send;
   const originalKey = process.env.DEEPSEEK_API_KEY;
   let calls = 0;
   const failures: Array<{ attempt: number; category: string; constraint: string }> = [];
   process.env.DEEPSEEK_API_KEY = 'test-key';
-  globalThis.fetch = async () => {
+  modelTransport.send = async () => {
     calls += 1;
     return new Response(JSON.stringify({ choices: [{ message: { content: '{' }, finish_reason: 'stop' }] }), {
       status: 200,
@@ -428,21 +429,21 @@ test('invalid model JSON retries once and returns the explicit outline error', a
       { attempt: 2, category: 'structure', constraint: '输出必须是完整、可解析的单个 JSON 对象' },
     ]);
   } finally {
-    globalThis.fetch = originalFetch;
+    modelTransport.send = originalFetch;
     if (originalKey === undefined) delete process.env.DEEPSEEK_API_KEY;
     else process.env.DEEPSEEK_API_KEY = originalKey;
   }
 });
 
 test('page-count structure errors provide a concrete constraint to the repair attempt', async () => {
-  const originalFetch = globalThis.fetch;
+  const originalFetch = modelTransport.send;
   const originalKey = process.env.DEEPSEEK_API_KEY;
   const validSix = { ...structuredClone(outline), slides: outline.slides.filter(slide => slide.id !== 'venn') };
   const requestBodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
   const failures: Array<{ attempt: number; category: string; constraint: string }> = [];
   process.env.DEEPSEEK_API_KEY = 'test-key';
-  globalThis.fetch = async (_input, init) => {
-    const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+  modelTransport.send = async (_input, _key, request) => {
+    const body = request as { messages: Array<{ role: string; content: string }> };
     requestBodies.push(body);
     const deck = requestBodies.length === 1 ? outline : validSix;
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ safe: true, deck }) }, finish_reason: 'stop' }] }), {
@@ -464,7 +465,7 @@ test('page-count structure errors provide a concrete constraint to the repair at
     assert.match(requestBodies[1].messages[1].content, /不得改变表格的数据形态/);
     assert.deepEqual(failures.map(({ attempt, category, constraint }) => ({ attempt, category, constraint })), [{ attempt: 1, category: 'structure', constraint: 'slides：必须严格包含 6 页，首张为 cover，末张为 closing' }]);
   } finally {
-    globalThis.fetch = originalFetch;
+    modelTransport.send = originalFetch;
     if (originalKey === undefined) delete process.env.DEEPSEEK_API_KEY;
     else process.env.DEEPSEEK_API_KEY = originalKey;
   }

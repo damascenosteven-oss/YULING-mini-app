@@ -191,6 +191,7 @@ def main():
             config = {"gateway": gateway, "caddy_network": network, "caddy_container": edge}
             setup = """import pathlib,json,os,sys
 c=json.loads(sys.stdin.read()); root=pathlib.Path('/etc/yuling-ppt-test')
+s=pathlib.Path('/opt/yuling-ppt-test/model-settings');s.mkdir(mode=0o700);os.chown(s,10001,10001)
 for name,data in [('config.json',json.dumps(c['config'])),('app.env','')]:
  p=root/name;p.write_text(data);p.chmod(0o600)
 p=pathlib.Path('/home/yuling-ppt-deploy/.ssh');p.mkdir();p.chmod(0o755)

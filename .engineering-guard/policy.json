@@ -95,6 +95,14 @@
         "plan_sha256": "5c52adccf0ef7287332ca892426939db88e9fc7576d7bfbb27c4201da3d2b40b",
         "adr": "docs/adr/0012-outline-generation-repair.md",
         "adr_sha256": "04431c156a2c7466f686f12a14bf638e8d1587d47f16ca6c59080e12dc557cd7"
+      },
+      "30": {
+        "plan": "docs/plans/issue-30-admin-model-settings.md",
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/30",
+        "adr": "docs/adr/0013-admin-model-settings.md",
+        "approval_source": "Owner explicitly requested implementation of the complete accepted administrator model settings and search-independent ordinary generation plan in this Codex conversation on 2026-10-30. Code, tests, Issue branch push and review PR authorized. No merge, server operation, deployment or paid generation.",
+        "adr_sha256": "2c71be010c133778381c780d58d58ea0556b30a00d893e79d2fc5ed4738478d9",
+        "plan_sha256": "c144327718272c32fbeb6c0e8af443e1698da75163f49ab0988b36249ed59545"
       }
     }
   }

@@ -14,6 +14,7 @@ import tempfile
 import urllib.request
 
 ROOT = Path("/opt/yuling-ppt-test")
+MODEL_SETTINGS_DIR = ROOT / "model-settings"
 CONF = Path("/etc/yuling-ppt-test")
 HOME = Path("/var/lib/yuling-ppt-deploy")
 HELPER = Path("/usr/local/libexec/yuling-ppt-release.py")
@@ -159,6 +160,57 @@ def store_secrets():
     print("Server-only secrets stored with root ownership and mode 0600; no values printed.")
 
 
+def initialize_model_settings(origin, reset_password=False):
+    import fcntl
+    from urllib.parse import urlsplit
+    address = urlsplit(origin)
+    require(address.scheme == "https" and address.netloc and not address.username and not address.password
+            and address.path in ("", "/") and not address.query and not address.fragment,
+            "Supply the exact HTTPS site Origin without a path")
+    require(sys.stdin.isatty(), "Enter the administrator password in an interactive terminal")
+    path = CONF / "app.env"
+    info = path.lstat()
+    require(not path.is_symlink() and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600,
+            "Existing application secrets must be root-owned mode 0600")
+    with (ROOT / "receiver.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError("Another release operation is active") from error
+        before = path.read_bytes()
+        require(before.endswith(b"\n"), "Existing app.env must end with a newline; inspect it without printing values")
+        values = dict(line.split("=", 1) for line in before.decode().splitlines() if line and not line.startswith("#") and "=" in line)
+        require(reset_password or "PPT_ADMIN_PASSWORD_HASH" not in values, "Administrator already initialized; use explicit --reset-password")
+        password = getpass.getpass("New administrator password (hidden, not the invite): ")
+        require(12 <= len(password) <= 200 and not any(c in password for c in "\r\n\x00")
+                and password != values.get("PPT_INVITE_PASSWORD"), "Use an independent administrator password of 12–200 characters")
+        require(password == getpass.getpass("Repeat administrator password (hidden): "), "Administrator passwords do not match")
+        salt = secrets.token_hex(16)
+        hashed = "scrypt-v1:" + salt + ":" + hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=8, p=1, dklen=32).hex()
+        if MODEL_SETTINGS_DIR.exists() or MODEL_SETTINGS_DIR.is_symlink():
+            existing = MODEL_SETTINGS_DIR.lstat()
+            require(not MODEL_SETTINGS_DIR.is_symlink() and MODEL_SETTINGS_DIR.is_dir()
+                    and existing.st_uid == existing.st_gid == 10001 and stat.S_IMODE(existing.st_mode) == 0o700,
+                    "Existing model settings directory differs; inspect before changing it")
+        else:
+            MODEL_SETTINGS_DIR.mkdir(mode=0o700)
+            os.chown(MODEL_SETTINGS_DIR, 10001, 10001)
+        backup = CONF / ("app-model-settings-" + digest(before) + ".before")
+        create_only(backup, before)
+        kept = b"".join(line for line in before.splitlines(keepends=True)
+                        if not line.startswith((b"PPT_ADMIN_PASSWORD_HASH=", b"PPT_PUBLIC_ORIGIN=")))
+        after = kept + ("PPT_ADMIN_PASSWORD_HASH=" + hashed + "\nPPT_PUBLIC_ORIGIN=" + origin.rstrip("/") + "\n").encode()
+        fd, name = tempfile.mkstemp(prefix=".app-model-settings-", dir=CONF)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(after); stream.flush(); os.fsync(stream.fileno())
+            require(path.read_bytes() == before, "Application secrets changed concurrently")
+            os.replace(name, path)
+        finally:
+            Path(name).unlink(missing_ok=True)
+    print("Administrator hash and private persistent settings directory prepared; no secret values printed. Existing containers unchanged. Publish the reviewed new version to load them.")
+
+
 def reload_caddy(container, data):
     actual = call("/usr/bin/docker", "exec", container, "cat", "/etc/caddy/Caddyfile")
     require(actual == data, "Container did not see the in-place configuration update")
@@ -222,7 +274,7 @@ def restore_site():
 
 def verify_receiver(path):
     result = json.loads(call(sys.executable, "-I", path, "--self-check"))
-    require(result == {"receiver_version": 2, "capabilities": ["upload-progress-v1", "phased-upload-deadlines-v1", "bounded-probe-v1"]},
+    require(result == {"receiver_version": 2, "capabilities": ["upload-progress-v1", "phased-upload-deadlines-v1", "bounded-probe-v1", "admin-model-settings-v1"]},
             "Candidate receiver capability check failed")
 
 
@@ -308,6 +360,9 @@ def main():
     setup.add_argument("--caddy-network", required=True)
     setup.add_argument("--public-key", type=Path, required=True)
     commands.add_parser("secrets")
+    model = commands.add_parser("model-settings")
+    model.add_argument("--origin", required=True)
+    model.add_argument("--reset-password", action="store_true")
     site = commands.add_parser("connect-site")
     site.add_argument("--domain", required=True)
     site.add_argument("--existing-site", required=True)
@@ -319,6 +374,8 @@ def main():
         prepare(args)
     elif args.command == "secrets":
         store_secrets()
+    elif args.command == "model-settings":
+        initialize_model_settings(args.origin, args.reset_password)
     elif args.command == "connect-site":
         connect_site(args)
     elif args.command == "upgrade-receiver":
