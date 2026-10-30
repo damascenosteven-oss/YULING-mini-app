@@ -40,7 +40,7 @@ https.request = function (input, options, callback) {
  const isStorage = url.hostname === 'fixture-bucket.cos.ap-shanghai.myqcloud.com';
  assert.ok(isModel || isStorage, 'no other native HTTPS destination');
  const chunks = [];
- const request = new Writable({ write(chunk, _encoding, done) { chunks.push(Buffer.from(chunk)); done(); } });
+ const request = new Writable({ autoDestroy: false, write(chunk, _encoding, done) { chunks.push(Buffer.from(chunk)); done(); } });
  request.setTimeout = () => request;
  request.flushHeaders = () => {};
  request.abort = () => request.destroy(new Error('fixture aborted'));
