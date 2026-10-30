@@ -1,6 +1,7 @@
 """Recreate a disconnected application over its test volume, then prove read-only behavior."""
 import json
 import subprocess
+import sys
 import uuid
 from http_evidence import FixtureFailure, failure, resources
 
@@ -62,6 +63,7 @@ def check(image, fixture, volume, record=None):
             if record: record(detail)
         except Exception:
             keep_fixture = True
+            print(json.dumps({'event': 'diagnostic_save_failed', 'retained_container': name}), file=sys.stderr)
         raise FixtureFailure(detail) from None
     finally:
         if not keep_fixture:

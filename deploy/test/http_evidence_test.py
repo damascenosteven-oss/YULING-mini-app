@@ -90,6 +90,32 @@ class Evidence(unittest.TestCase):
             with self.assertRaises((OSError, SystemExit)): child.main()
             self.assertFalse(cleanup.called, 'Only isolated fixture was deleted after evidence write failure')
 
+    def test_persistence_save_failure_reports_retained_fixture_without_raw_error(self):
+        import contextlib
+        import io
+        child = bridge_tests.load('model-persistence-checks')
+        stderr = io.StringIO()
+        payload = {'recreated_config_preserved': True, 'read_only_write_rejected': True,
+                   'source': 'saved', 'key_returned': False}
+        def execute(args, **kwargs):
+            value = ''
+            if args[:2] == ['docker', 'exec']: value = json.dumps(payload)
+            if args[:2] == ['docker', 'inspect']:
+                value = json.dumps([{'Mounts': [{'Destination': '/var/lib/yuling-ppt/model-settings', 'RW': False}],
+                                     'State': {'OOMKilled': False}}])
+            return subprocess.CompletedProcess(args, 0, stdout=value)
+        with patch.object(child.subprocess, 'run', side_effect=execute) as calls, \
+                patch.object(child, 'resources', return_value={'available': False}), \
+                contextlib.redirect_stderr(stderr):
+            with self.assertRaises(evidence.FixtureFailure):
+                child.check('fixture', Path('/fixture.mjs'), 'fixture-volume',
+                            record=lambda _: (_ for _ in ()).throw(OSError('PRIVATE_DISK_ERROR')))
+        saved = json.loads(stderr.getvalue())
+        self.assertEqual(saved['event'], 'diagnostic_save_failed')
+        self.assertTrue(saved['retained_container'].startswith('yuling-settings-recreate-'))
+        self.assertNotIn('PRIVATE', stderr.getvalue())
+        self.assertFalse(any(c.args[0][:2] == ['docker', 'rm'] for c in calls.call_args_list))
+
 
 class Retention(unittest.TestCase):
     setUp = bridge_tests.ContractTests.setUp
