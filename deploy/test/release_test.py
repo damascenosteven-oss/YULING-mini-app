@@ -135,6 +135,7 @@ class RuntimeContract(unittest.TestCase):
         runtime.container = lambda name: None
         runtime.call = lambda *args, **kwargs: calls.append(args) or ""
         runtime.image_identity = lambda manifest: "sha256:" + "a" * 64
+        runtime.settings_required = lambda manifest: False
         runtime.start({"release": RID, "image_id": "sha256:" + "a" * 64})
         args = calls[0]
         for flag, expected in (("--memory", "1024m"), ("--memory-swap", "1024m"),

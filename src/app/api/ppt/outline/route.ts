@@ -14,6 +14,7 @@ import { outlineRequestSchema } from '@/lib/ppt/schema';
 import { resolveMotionPlan, type MotionHistory } from '@/lib/ppt/motion';
 import { listDeckHistory } from '@/lib/ppt/storage';
 import { UnsupportedSkillError } from '@/lib/ppt/skills';
+import { ModelSettingsError } from '@/lib/ppt/model-settings';
 
 export const runtime = 'nodejs';
 
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
     });
     return response;
   } catch (error) {
+    if (error instanceof ModelSettingsError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof UnsafeRequestError) return NextResponse.json({ error: error.message }, { status: 422 });
     if (error instanceof ResearchUnavailableError) return NextResponse.json({ error: error.message, code: error.code }, { status: 503 });
     if (error instanceof ResearchInsufficientError) return NextResponse.json({ error: error.message, code: error.code }, { status: 422 });

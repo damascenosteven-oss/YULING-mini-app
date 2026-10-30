@@ -24,12 +24,13 @@ APPLICATION = "yuling-ppt-test"
 ROOT = Path("/opt/yuling-ppt-test")
 CONFIG = Path("/etc/yuling-ppt-test/config.json")
 ENV_FILE = Path("/etc/yuling-ppt-test/app.env")
+MODEL_SETTINGS_DIR = ROOT / "model-settings"
 MAX_UPLOAD = 2 * 1024**3
 MAX_IMAGE = 4 * 1024**3
 MIN_DISK = 8 * 1024**3
 RID = re.compile(r"[0-9a-f]{12}-[0-9]{1,20}-[0-9]{1,3}")
 RECEIVER_VERSION = 2
-CAPABILITIES = ["upload-progress-v1", "phased-upload-deadlines-v1", "bounded-probe-v1"]
+CAPABILITIES = ["upload-progress-v1", "phased-upload-deadlines-v1", "bounded-probe-v1", "admin-model-settings-v1"]
 TRANSFER_SECONDS = 2700
 IDLE_SECONDS = 120
 PROCESSING_SECONDS = 900
@@ -38,6 +39,15 @@ PROBE_SIZE = 4 * 1024**2
 PROBE_SECONDS = 300
 PROBE_IDLE = 60
 PROBE_HOST = "yuling-ppt-test-1494859304.cos.ap-shanghai.myqcloud.com"
+
+
+def model_settings_ready():
+    try:
+        value = MODEL_SETTINGS_DIR.lstat()
+        return (stat.S_ISDIR(value.st_mode) and not MODEL_SETTINGS_DIR.is_symlink()
+                and value.st_uid == value.st_gid == 10001 and stat.S_IMODE(value.st_mode) == 0o700)
+    except OSError:
+        return False
 
 
 class ReleaseError(RuntimeError):
@@ -324,7 +334,7 @@ def normalize_image(source, destination, manifest):
                 and labels.get("dev.yuling.engine.revision") == ENGINE
                 and labels.get("dev.yuling.application") == APPLICATION, "Image source labels mismatch")
         require(labels.get("dev.yuling.source.dirty") == "false", "Development image is not publishable")
-        forbidden = {"DEEPSEEK_API_KEY", "COS_SECRET_ID", "COS_SECRET_KEY",
+        forbidden = {"DEEPSEEK_API_KEY", "COS_SECRET_ID", "COS_SECRET_KEY", "PPT_ADMIN_PASSWORD_HASH",
                      "PPT_SESSION_SECRET", "PPT_INVITE_PASSWORD", "BOCHA_API_KEY"}
         require(not any(value.split("=", 1)[0] in forbidden for value in settings.get("Env", [])),
                 "Image must not contain credential environment variables")
@@ -464,6 +474,13 @@ class DockerRuntime:
         image = json.loads(self.call("image", "inspect", manifest["image_tag"]))[0]
         return loaded_identity(image, data)
 
+    def settings_required(self, manifest):
+        directory = ROOT / "releases" / valid_release(manifest["release"])
+        with tarfile.open(directory / "image.tar") as archive:
+            with archive.extractfile("config.json") as stream:
+                data = json.load(stream)
+        return data.get("config", {}).get("Labels", {}).get("dev.yuling.model-settings") == "v1"
+
     def capacity(self):
         match = re.search(r"^MemAvailable:\s+(\d+)\s+kB$", Path("/proc/meminfo").read_text(), re.M)
         require(match and int(match[1]) >= 768 * 1024, "Insufficient available memory; minimum 768 MiB")
@@ -492,6 +509,10 @@ class DockerRuntime:
                 "-e", "PPT_ENGINE_ROOT=/opt/yuling/engine", "-e", "PPT_PYTHON_PATH=/usr/local/bin/python",
                 "-e", "PPT_CHROME_PATH=/opt/chrome/chrome-linux64/chrome",
                 "--log-driver", "json-file", "--log-opt", "max-size=5m", "--log-opt", "max-file=2"]
+        if self.settings_required(manifest):
+            require(model_settings_ready(), "Model settings must be initialized with the reviewed administrator setup before publish")
+            args += ["--mount", "type=bind,src=" + str(MODEL_SETTINGS_DIR) +
+                     ",dst=/var/lib/yuling-ppt/model-settings" + ("" if published else ",readonly")]
         if published:
             args += ["--publish", self.config["gateway"] + ":5000:5000", "--restart", "unless-stopped"]
         args += [self.image_identity(manifest)]
@@ -696,7 +717,8 @@ def dispatch(controller, stream):
     require(not stream.read(1), "Unexpected trailing request data")
     if operation == "status":
         require(set(request) == {"op"}, "Invalid status fields")
-        return {**controller.state(), "receiver_version": RECEIVER_VERSION, "capabilities": CAPABILITIES}
+        return {**controller.state(), "receiver_version": RECEIVER_VERSION, "capabilities": CAPABILITIES,
+                "model_settings_ready": model_settings_ready()}
     if operation == "deploy":
         require(set(request) == {"op", "release"}, "Invalid deploy fields")
         return controller.install(request["release"])

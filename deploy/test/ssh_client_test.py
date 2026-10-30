@@ -53,6 +53,21 @@ class ClientBoundary(unittest.TestCase):
             with patch.object(client.socket, "create_connection", side_effect=error):
                 client.external_port_closed("example.invalid")
 
+    def test_unprepared_receiver_stops_before_reading_or_uploading_bundle(self):
+        env = {"GITHUB_REF": "refs/heads/main", "GITHUB_SHA": "a" * 40,
+               "DEPLOY_HOST": "example.invalid", "DEPLOY_SSH_KEY": "fixture",
+               "SSH_KNOWN_HOSTS": "fixture"}
+        for status in (
+                {"receiver_version": 2, "capabilities": ["upload-progress-v1", "phased-upload-deadlines-v1"]},
+                {"receiver_version": 2, "capabilities": ["upload-progress-v1", "phased-upload-deadlines-v1", "admin-model-settings-v1"], "model_settings_ready": False}):
+            with patch.dict(os.environ, env), patch.object(sys, "argv", [
+                    "ssh-client.py", "publish", "--bundle", "/missing/bundle.tar", "--stage", "upload"]), \
+                    patch.object(client, "request", return_value=status) as request, \
+                    patch.object(client, "external_port_closed"):
+                with self.assertRaisesRegex(RuntimeError, "[Ss]ettings|[Uu]pgrade|[Ii]nitializ"):
+                    client.main()
+                self.assertEqual([call.args[1]["op"] for call in request.call_args_list], ["status"])
+
     def test_upload_and_activation_are_separate_restricted_calls(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -69,8 +84,8 @@ class ClientBoundary(unittest.TestCase):
                 operations = []
                 def fake_request(command, header, bundle=None):
                     operations.append(header["op"])
-                    return {"receiver_version": 2, "capabilities": [
-                        "upload-progress-v1", "phased-upload-deadlines-v1"]}
+                    return {"receiver_version": 2, "model_settings_ready": True, "capabilities": [
+                        "upload-progress-v1", "phased-upload-deadlines-v1", "admin-model-settings-v1"]}
                 with patch.dict(os.environ, env), patch.object(sys, "argv", [
                         "ssh-client.py", "publish", "--bundle", str(bundle), "--stage", stage]), \
                         patch.object(client, "request", side_effect=fake_request), \

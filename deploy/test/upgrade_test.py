@@ -29,7 +29,7 @@ class Upgrade(unittest.TestCase):
         self.old = b"# known old receiver\n"
         self.helper.write_bytes(self.old)
         self.helper.chmod(0o755)
-        self.candidate = b'print(\'{"receiver_version":2,"capabilities":["upload-progress-v1","phased-upload-deadlines-v1","bounded-probe-v1"]}\')\n'
+        self.candidate = b'print(\'{"receiver_version":2,"capabilities":["upload-progress-v1","phased-upload-deadlines-v1","bounded-probe-v1","admin-model-settings-v1"]}\')\n'
         (self.base / "release.py").write_bytes(self.candidate)
         for name, value in (("ROOT", self.root), ("CONF", self.conf), ("HELPER", self.helper),
                             ("__file__", str(self.base / "bootstrap.py"))):

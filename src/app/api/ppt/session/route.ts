@@ -11,6 +11,7 @@ import {
 } from '@/lib/ppt/auth';
 import { clientAddress, consumeRateLimit } from '@/lib/ppt/rate-limit';
 import { sessionRequestSchema } from '@/lib/ppt/schema';
+import { ADMIN_COOKIE } from '@/lib/ppt/admin-auth';
 
 export async function POST(request: NextRequest) {
   const address = clientAddress(request.headers);
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   const response = NextResponse.json({ ok: true });
+  response.cookies.set(ADMIN_COOKIE, '', { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', path: '/api/ppt/admin', maxAge: 0 });
   response.cookies.set(SESSION_COOKIE, '', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 0 });
   return response;
 }

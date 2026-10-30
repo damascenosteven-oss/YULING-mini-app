@@ -21,11 +21,13 @@ ERROR_CODES = {"transfer_idle", "transfer_timeout", "processing_timeout",
                "probe_auth", "probe_http", "probe_integrity", "probe_io", "probe_cleanup", "probe_boundary", "probe_pending", "probe_cancelled"}
 
 
-def require_capabilities(value):
+def require_capabilities(value, settings=False):
     if (value.get("receiver_version") != 2 or not isinstance(value.get("capabilities"), list) or
             not {"upload-progress-v1", "phased-upload-deadlines-v1"}.issubset(
                 value.get("capabilities", []))):
         raise RuntimeError("Receiver upgrade required before publish")
+    if settings and ("admin-model-settings-v1" not in value.get("capabilities", []) or not value.get("model_settings_ready")):
+        raise RuntimeError("Receiver upgrade and administrator model-settings initialization required before upload")
 
 
 def progress_fields(value):
@@ -175,7 +177,7 @@ def main():
         status = request(command, {"op": "status"})
         if args.operation == "status":
             return
-        require_capabilities(status)
+        require_capabilities(status, settings=args.operation == "publish")
         external_port_closed(host)
         if args.operation == "publish":
             if args.bundle is None:
