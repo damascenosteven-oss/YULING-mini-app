@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.request
 import prepared_release as prepared
+import http_evidence
 
 OWNER = "damascenosteven-oss"
 REPO = "YULING-mini-app"
@@ -270,7 +271,9 @@ def prepare_package(api, deployment, config, root, phase):
             return prepared.validate(package, sha)
     else:
         info = None
-    with tempfile.TemporaryDirectory(prefix="yuling-prepare-") as directory:
+    directory = tempfile.mkdtemp(prefix="yuling-prepare-")
+    keep_directory = False
+    try:
         checkout = Path(directory) / "app"
         output = Path(directory) / "output"
         phase("source_preparation")
@@ -294,25 +297,30 @@ def prepare_package(api, deployment, config, root, phase):
         phase("image_visual_checks")
         try:
             run(sys.executable, checkout / "deploy/test/verify-image.py", "--build-output", output, env=environment)
-        except subprocess.CalledProcessError:
-            diagnostic = output / "image-check-error.json"
-            if diagnostic.is_file() and not diagnostic.is_symlink() and diagnostic.stat().st_size <= 1024:
-                data = json.loads(diagnostic.read_text())
-                stages = {"container_start", "runtime_permissions", "readiness", "quick_smoke",
-                          "repeatability", "memory_and_evidence"}
-                if (set(data) == {"schema", "stage", "code", "exit_code"} and data["schema"] == 1
-                        and data["stage"] in stages and type(data["exit_code"]) is int
-                        and data["code"] in {"image_permission_denied", "image_check_failed"}):
-                    record = Path(config["state_dir"]) / (str(deployment["id"]) + "-image-check-error.json")
-                    with record.open("x") as stream:
-                        json.dump(data, stream)
-                    record.chmod(0o600)
-            raise
+        except subprocess.CalledProcessError as error:
+            try:
+                http_evidence.retain(output, Path(config["state_dir"]), deployment["id"], sha)
+            except Exception:
+                keep_directory = True
+                print(f"Request {deployment['id']}: diagnostic_save_failed; isolated workspace retained", flush=True)
+            raise error from None
+        try:
+            http_evidence.retain(output, Path(config["state_dir"]), deployment["id"], sha)
+            if not http_evidence.read_json(output / "outline-entry.json")["passed"]:
+                raise http_evidence.EvidenceError()
+        except Exception:
+            keep_directory = True
+            print(f"Request {deployment['id']}: diagnostic_save_failed; isolated workspace retained", flush=True)
+            raise subprocess.CalledProcessError(6, ["verify-image"]) from None
         if checked_request(api, deployment) != "prepare":
             raise ValueError("request changed during preparation")
         result = prepared.accept(root, output, checkout, sha)
         prepared.retain_two(root, sha)
         return result
+
+    finally:
+        if not keep_directory:
+            shutil.rmtree(directory)
 
 
 def build_and_transfer(api, deployment, operation, config):

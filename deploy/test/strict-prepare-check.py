@@ -120,6 +120,8 @@ def main():
             raise AssertionError("Failed image gained success evidence")
     finally:
         subprocess.run(["docker", "image", "rm", tag], capture_output=True)
+    run(sys.executable, HERE / "deploy/test/http-evidence-entry.py",
+        "--image-info", package / "image.json", "--output", root / "http-fault")
     (root / "result.json").write_text(json.dumps({"passed": True, "app_sha": sha,
         "github_api_fixture": True, "server_calls": 0, "source_mode": "0600", "umask": "0077",
         "real_prepare_build_verify_accept": True, "permission_fault_rejected": True,

@@ -103,6 +103,12 @@
         "approval_source": "Owner explicitly requested implementation of the complete accepted administrator model settings and search-independent ordinary generation plan in this Codex conversation on 2026-10-30. Code, tests, Issue branch push and review PR authorized. No merge, server operation, deployment or paid generation.",
         "adr_sha256": "2c71be010c133778381c780d58d58ea0556b30a00d893e79d2fc5ed4738478d9",
         "plan_sha256": "c144327718272c32fbeb6c0e8af443e1698da75163f49ab0988b36249ed59545"
+      },
+      "32": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/32",
+        "approval_source": "Owner explicitly requested implementation of the complete accepted HTTP failure evidence and reproduction plan on 2026-10-30 in this Codex conversation. Issue worktree, code/tests, Issue branch push and review PR authorized. No deployment, administrator initialization, server changes or paid API calls.",
+        "plan": "docs/plans/issue-32-http-evidence.md",
+        "plan_sha256": "bb859e503aa79f2fd77f0f2b9e2a00cc628349431ab3a067d05247f4db3e7a91"
       }
     }
   }
