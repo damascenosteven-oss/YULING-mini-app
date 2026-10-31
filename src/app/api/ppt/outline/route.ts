@@ -11,7 +11,7 @@ import {
 } from '@/lib/ppt/deepseek';
 import { clientAddress, consumeRateLimit } from '@/lib/ppt/rate-limit';
 import { outlineRequestSchema } from '@/lib/ppt/schema';
-import { resolveMotionPlan, type MotionHistory } from '@/lib/ppt/motion';
+import { MotionResolutionError, resolveMotionPlan, type MotionHistory } from '@/lib/ppt/motion';
 import { listDeckHistory } from '@/lib/ppt/storage';
 import { UnsupportedSkillError } from '@/lib/ppt/skills';
 import { ModelSettingsError } from '@/lib/ppt/model-settings';
@@ -49,6 +49,10 @@ export async function POST(request: NextRequest) {
     });
     return response;
   } catch (error) {
+    if (error instanceof MotionResolutionError) {
+      console.error('ppt_outline_failed', { requestId, step: 'motion_resolve', classification: 'no_valid_candidate' });
+      return NextResponse.json({ error: `大纲生成失败，请重试（${requestId.slice(0, 8)}）` }, { status: 502 });
+    }
     if (error instanceof ModelSettingsError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof UnsafeRequestError) return NextResponse.json({ error: error.message }, { status: 422 });
     if (error instanceof ResearchUnavailableError) return NextResponse.json({ error: error.message, code: error.code }, { status: 503 });

@@ -109,6 +109,14 @@
         "approval_source": "Owner explicitly requested implementation of the complete accepted HTTP failure evidence and reproduction plan on 2026-10-30 in this Codex conversation. Issue worktree, code/tests, Issue branch push and review PR authorized. No deployment, administrator initialization, server changes or paid API calls.",
         "plan": "docs/plans/issue-32-http-evidence.md",
         "plan_sha256": "bb859e503aa79f2fd77f0f2b9e2a00cc628349431ab3a067d05247f4db3e7a91"
+      },
+      "34": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/34",
+        "approval_source": "Owner explicitly approved the complete motion-validity product fix plan on 2026-10-31 in this Codex conversation, then confirmed prerequisite PR33 merged. Code/tests, Issue branch push and review PR authorized; no merge, deployment, server actions or paid API calls.",
+        "plan": "docs/plans/issue-34-motion-validity.md",
+        "adr": "docs/adr/0014-motion-validity.md",
+        "plan_sha256": "4e8feddec40668c9d9f80760947ed72334fcb2d6e4491230c4dc17f44c05fc8e",
+        "adr_sha256": "97c0d5f5d50735a200e3522163e345fbcfc60a764fbb057852a0bf28b4c08c0b"
       }
     }
   }
