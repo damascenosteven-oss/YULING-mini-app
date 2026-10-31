@@ -9,7 +9,7 @@ import uuid
 CASES = ('repair', 'invalid', 'timeout', 'upstream', 'json', 'truncated', 'ordinary', 'no-search-key', 'admin',
          'highlight-repair', 'skill-repair', 'skill-invalid', 'json-repair')
 STEPS = {'container_start', 'readiness', 'http_client', 'ordinary_login', 'admin_login', 'model_read', 'model_test',
-         'model_save', 'outline_generate', 'motion_refresh', 'python_build', 'preview', 'mobile_page', 'persistence',
+         'model_save', 'outline_generate', 'motion_refresh', 'python_build', 'preview', 'mobile_page', 'mobile_playback', 'persistence',
          'resource_check', 'contract_check', 'complete'}
 KINDS = {'assertion', 'timeout', 'process_exit', 'runtime_error', 'resource', 'diagnostic_error'}
 STAGES = {'container_start', 'runtime_permissions', 'readiness', 'quick_smoke', 'outline_http_entry',
@@ -156,7 +156,8 @@ def validate_report(data, app_sha, image_id=None):
 
 def checker_digest(folder):
     return hashlib.sha256(b''.join((folder / n).read_bytes() for n in (
-        'http_evidence.py', 'outline-entry-checks.py', 'outline-entry-fixture.mjs', 'model-persistence-checks.py'))).hexdigest()
+        'http_evidence.py', 'outline-entry-checks.py', 'outline-entry-fixture.mjs', 'model-persistence-checks.py',
+        'mobile-playback-check.mjs'))).hexdigest()
 
 
 def retain(output, state, identity, app_sha):

@@ -112,6 +112,11 @@ async function fixtureFetch(...args){const r=await fetch(...args);fixtureHttp=r.
     return titles&&values&&slide.querySelector('.ai-data-meta').textContent.includes('单位：报名指数（演示）');
    });if(!rankingFit)throw Error('ranking descriptive unit clipping');
    await playback.screenshot({path:'/tmp/ranking-unit-fit.png'});await desktop.close();
+   fixtureStep='mobile_playback';
+   const {checkMobilePlayback}=await import('/tmp/mobile-playback-check.mjs');
+   // The HTTP fixture can choose a deck without step nodes; the golden fixture requires them.
+   await checkMobilePlayback(browser,base+result.viewerUrl,'no-preference',false);
+   await checkMobilePlayback(browser,base+result.viewerUrl,'reduce',false);
 
   }finally{await browser.close();}
  }
@@ -154,8 +159,13 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="outline-entry-fixture-") as folder:
             fixture = Path(folder) / "fixture.mjs"
-            shutil.copyfile(HERE / "outline-entry-fixture.mjs", fixture)
-            os.chmod(fixture, 0o644)
+            playback = Path(folder) / "mobile-playback-check.mjs"
+            # docker cp preserves mode. Only the two test programs in this
+            # private staging directory need to be readable by the image UID.
+            for source, staged in ((HERE / "outline-entry-fixture.mjs", fixture),
+                                   (HERE / playback.name, playback)):
+                shutil.copyfile(source, staged)
+                os.chmod(staged, 0o644)
             report["fixture_sha256"] = hashlib.sha256(fixture.read_bytes()).hexdigest()
             for case, (status, code, models) in expected.items():
                 name = "yuling-outline-entry-" + uuid.uuid4().hex[:12]
@@ -180,6 +190,8 @@ def main():
                         "-e", "PPT_INVITE_PASSWORD=fixture-invite-for-http-test",
                         "-e", "PPT_SESSION_SECRET=fixture-session-secret-for-http-test", *mounts, args.image)
                     run("docker", "cp", fixture, name + ":/tmp/outline-entry-fixture.mjs")
+                    if case == "admin":
+                        run("docker", "cp", playback, name + ":/tmp/mobile-playback-check.mjs")
                     run("docker", "start", name)
                     result["step"] = "http_client"
                     data = json.loads(run("docker", "exec", name, "node", "-e", CLIENT))
