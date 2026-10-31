@@ -153,8 +153,10 @@
       "46": {
         "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/46",
         "plan": "docs/plans/issue-46-playback-evidence.md",
-        "plan_sha256": "d6cf860a2fb7fcead89e8c15f4a2acd676382b0f3aa068e089cb730ae8a117a4",
-        "approval_source": "Continuation of the owner-approved Issue #44 mobile playback acceptance and failure diagnosis via Issue/PR. Owner has merged #45. This follow-up preserves assertions and records sanitized source-bound test locations; owner reviews and merges. No server cleanup or paid calls authorized."
+        "plan_sha256": "b9be0f935162a40a2bedaae489daf0d52d45d13883d03ebe93ea200e9f3d349b",
+        "approval_source": "Owner explicitly approved implementation of the full original-visual playback resource lifecycle plan on 2026-11-01, superseding the lightweight visuals. Reuse Issue 46 and open PR 47; owner alone merges. Post-merge verified direct deployment and physical owner iPhone acceptance. Only the separately authorized unreferenced 0dd932a server image may be removed if needed.",
+        "adr": "docs/adr/0016-playback-resource-lifecycle.md",
+        "adr_sha256": "79258b525561e8f68445c33b2a5c28d878a4dce3bbc7c02d40c3c5b3b5023ffe"
       }
     }
   }

@@ -10,6 +10,7 @@ import tempfile
 import uuid
 import importlib.util
 import sys
+import ast
 from http_evidence import atomic_json, checker_digest, failure, resources, validate_report
 
 HERE = Path(__file__).resolve().parent
@@ -170,6 +171,11 @@ def main():
                                    (HERE / playback.name, playback)):
                 shutil.copyfile(source, staged)
                 os.chmod(staged, 0o644)
+            # Test-only reverse map is derived from the canonical source rather
+            # than maintaining another copy of the engine instrumentation.
+            patches = (HERE.parents[1] / "src/lib/ppt/mobile-playback-lifecycle.ts").read_text()
+            pairs = ast.literal_eval('[' + patches.split('export const playbackRewrites:', 1)[1].split('= [', 1)[1].rsplit('];', 1)[0] + ']')
+            fixture.write_text("const playbackFixtureRewrites=" + json.dumps(pairs) + ";\n" + fixture.read_text())
             report["fixture_sha256"] = hashlib.sha256(fixture.read_bytes()).hexdigest()
             for case, (status, code, models) in expected.items():
                 name = "yuling-outline-entry-" + uuid.uuid4().hex[:12]

@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildDeckHtml } from './builder';
 import { createGoldenOutline } from './golden-fixture';
-import { adaptMobilePlayback, PlaybackCompatibilityError } from './mobile-playback';
+import { adaptMobilePlayback, restoreOriginalPlaybackHtml, PlaybackCompatibilityError } from './mobile-playback';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright-core';
 import { checkMobilePlayback } from '../../../deploy/test/mobile-playback-check.mjs';
+import legacy from './fixtures/mobile-playback-v1.json';
 
 test('mobile adapter rejects unknown, duplicate and forged runtimes', () => {
   for (const html of ['', '<html><head></head><script>unknown()</script></html>', '<!-- yuling-mobile-playback:v1 -->', '<style data-yuling-mobile="v1"></style>']) {
@@ -37,10 +38,23 @@ test('browser QA mobile playback lifecycle through sandboxed share iframe', asyn
 
 test('real Python engine mobile adapter covers new and existing decks exactly once', async () => {
   const html = (await buildDeckHtml(createGoldenOutline())).toString();
-  assert.ok(html.includes('<!-- yuling-mobile-playback:v1 -->'), 'new builds must use shared adapter');
+  assert.ok(html.includes('<!-- yuling-mobile-playback:v2 -->'), 'new builds must retain original visuals with lifecycle v2');
   assert.equal(adaptMobilePlayback(html), html);
+  assert.throws(() => adaptMobilePlayback(html + '<!-- yuling-mobile-playback:v2 -->'), PlaybackCompatibilityError);
   assert.throws(() => adaptMobilePlayback(html + '<!-- yuling-mobile-playback:v1 -->'), PlaybackCompatibilityError);
   assert.throws(() => adaptMobilePlayback(html.replace('const SETTLE_MS = 7000;', 'const SETTLE_MS = 7001;')), PlaybackCompatibilityError);
   assert.throws(() => adaptMobilePlayback(html.replace('const token = ++generation;', 'const token = 0;')), PlaybackCompatibilityError);
   assert.throws(() => adaptMobilePlayback(html.replace('</head>', '</head></head>')), PlaybackCompatibilityError);
+});
+
+test('known v1 work is restored to original visuals and upgraded without duplicate compatibility code', async () => {
+  const html = (await buildDeckHtml(createGoldenOutline())).toString();
+  const raw = restoreOriginalPlaybackHtml(html);
+  const old = raw.replace('</head>', '<style data-yuling-mobile="v1">' + legacy.mobilePlaybackCss + '</style></head>')
+    .replace('splitHeadingLines();', '<!-- yuling-mobile-playback:v1 -->\n' + legacy.mobilePlaybackRuntime + 'splitHeadingLines();');
+  const upgraded = adaptMobilePlayback(old);
+  assert.equal(upgraded, html, 'known v1 and fresh original content must produce identical v2 playback');
+  assert.ok(upgraded.includes('<!-- yuling-mobile-playback:v2 -->'));
+  assert.equal(upgraded.includes('light-v1'), false);
+  assert.equal(adaptMobilePlayback(upgraded), upgraded);
 });
