@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { loadDeck } from '@/lib/ppt/storage';
+import { adaptMobilePlayback, PlaybackCompatibilityError } from '@/lib/ppt/mobile-playback';
 
 export const runtime = 'nodejs';
 
@@ -12,7 +13,7 @@ export async function GET(_request: Request, context: { params: Promise<{ code: 
     const deck = await loadDeck(code);
     if (deck.status === 'missing') return NextResponse.json({ error: '未找到课件' }, { status: 404 });
     if (deck.status === 'expired') return NextResponse.json({ error: '课件已过期' }, { status: 410 });
-    return new NextResponse(Buffer.from(deck.html), {
+    return new NextResponse(Buffer.from(adaptMobilePlayback(Buffer.from(deck.html).toString('utf8'))), {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'private, no-store',
@@ -20,7 +21,8 @@ export async function GET(_request: Request, context: { params: Promise<{ code: 
         'X-Content-Type-Options': 'nosniff',
       },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof PlaybackCompatibilityError) console.error('ppt_playback_compatibility', { code: 'runtime_unsupported' });
     return NextResponse.json({ error: '读取课件失败' }, { status: 502 });
   }
 }

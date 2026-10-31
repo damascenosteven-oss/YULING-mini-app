@@ -75,7 +75,21 @@ https.request = function (input, options, callback) {
   const raw = Buffer.concat(chunks);
   if (isStorage) {
    const key = decodeURIComponent(url.pathname);
-   if (options.method === 'PUT') { objects.set(key, { data: raw, headers: options.headers }); respond(200, '', { etag: '"fixture"' }); }
+   if (options.method === 'PUT') {
+    let data = raw;
+    if (key.endsWith('.html')) {
+     // Simulate an existing COS work: the writer must adapt new output, while
+     // the real GET route must adapt the unmodified pinned engine runtime too.
+     const html = raw.toString();
+     assert.equal(html.split('<!-- yuling-mobile-playback:v1 -->').length, 2);
+     const old = html.replace(/<style data-yuling-mobile="v1">[\s\S]*?<\/style>/, '')
+      .replace(/<!-- yuling-mobile-playback:v1 -->[\s\S]*?(?=splitHeadingLines\(\);)/, '');
+     assert.equal(old.includes('yuling-mobile-playback:v1'), false);
+     data = Buffer.from(old);
+    }
+    objects.set(key, { data, headers: { ...options.headers, 'content-length': String(data.length) } });
+    respond(200, '', { etag: '"fixture"' });
+   }
    else if (url.searchParams.has('list-type')) respond(200, '<ListBucketResult><IsTruncated>false</IsTruncated><KeyCount>0</KeyCount></ListBucketResult>', { 'content-type': 'application/xml' });
    else if (objects.has(key)) { const stored = objects.get(key); respond(200, options.method === 'HEAD' ? '' : stored.data, stored.headers); }
    else respond(404, '<Error><Code>NoSuchKey</Code></Error>', { 'content-type': 'application/xml' });

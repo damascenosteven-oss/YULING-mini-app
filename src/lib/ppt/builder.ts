@@ -6,6 +6,7 @@ import type { DeckOutline } from './schema';
 import { renderDeck } from './renderer';
 import { ensureMotionPlan } from './motion';
 import { pythonCandidates, type PythonCommand } from './platform';
+import { adaptMobilePlayback } from './mobile-playback';
 
 function engineRoot(): string {
   const root = process.env.PPT_ENGINE_ROOT;
@@ -93,7 +94,7 @@ export async function buildDeckHtml(outline: DeckOutline): Promise<Buffer> {
       '</head>',
       '<meta name="generator" content="YuLing AI PPT"><meta name="ai-generated" content="true"></head>',
     );
-    return Buffer.from(marked);
+    return Buffer.from(adaptMobilePlayback(marked));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

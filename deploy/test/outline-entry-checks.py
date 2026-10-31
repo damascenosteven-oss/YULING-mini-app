@@ -112,6 +112,10 @@ async function fixtureFetch(...args){const r=await fetch(...args);fixtureHttp=r.
     return titles&&values&&slide.querySelector('.ai-data-meta').textContent.includes('单位：报名指数（演示）');
    });if(!rankingFit)throw Error('ranking descriptive unit clipping');
    await playback.screenshot({path:'/tmp/ranking-unit-fit.png'});await desktop.close();
+   const {checkMobilePlayback}=await import('/tmp/mobile-playback-check.mjs');
+   // The HTTP fixture can choose a deck without step nodes; the golden fixture requires them.
+   await checkMobilePlayback(browser,base+result.viewerUrl,'no-preference',false);
+   await checkMobilePlayback(browser,base+result.viewerUrl,'reduce',false);
 
   }finally{await browser.close();}
  }
@@ -180,6 +184,7 @@ def main():
                         "-e", "PPT_INVITE_PASSWORD=fixture-invite-for-http-test",
                         "-e", "PPT_SESSION_SECRET=fixture-session-secret-for-http-test", *mounts, args.image)
                     run("docker", "cp", fixture, name + ":/tmp/outline-entry-fixture.mjs")
+                    run("docker", "cp", HERE / "mobile-playback-check.mjs", name + ":/tmp/mobile-playback-check.mjs")
                     run("docker", "start", name)
                     result["step"] = "http_client"
                     data = json.loads(run("docker", "exec", name, "node", "-e", CLIENT))

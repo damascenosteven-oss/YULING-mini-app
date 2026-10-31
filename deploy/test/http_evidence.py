@@ -156,7 +156,8 @@ def validate_report(data, app_sha, image_id=None):
 
 def checker_digest(folder):
     return hashlib.sha256(b''.join((folder / n).read_bytes() for n in (
-        'http_evidence.py', 'outline-entry-checks.py', 'outline-entry-fixture.mjs', 'model-persistence-checks.py'))).hexdigest()
+        'http_evidence.py', 'outline-entry-checks.py', 'outline-entry-fixture.mjs', 'model-persistence-checks.py',
+        'mobile-playback-check.mjs'))).hexdigest()
 
 
 def retain(output, state, identity, app_sha):
