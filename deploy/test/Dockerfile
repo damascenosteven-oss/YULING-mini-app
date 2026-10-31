@@ -26,6 +26,7 @@ WORKDIR /opt/yuling/app
 FROM runtime AS build
 ENV NODE_ENV=development
 COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
 COPY --from=dependency_store / /tmp/dependency-store/
 RUN --network=none npm_config_offline=true pnpm install --offline --frozen-lockfile --store-dir /tmp/dependency-store \
     && rm -rf /tmp/dependency-store
