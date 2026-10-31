@@ -47,7 +47,7 @@ test('real Python engine mobile adapter covers new and existing decks exactly on
   assert.throws(() => adaptMobilePlayback(html.replace('</head>', '</head></head>')), PlaybackCompatibilityError);
 });
 
-test('known v1 work is restored to original visuals and upgraded without duplicate compatibility code', async () => {
+test('real Python engine restores known v1 work and upgrades without duplicate compatibility code', async () => {
   const html = (await buildDeckHtml(createGoldenOutline())).toString();
   const raw = restoreOriginalPlaybackHtml(html);
   const old = raw.replace('</head>', '<style data-yuling-mobile="v1">' + legacy.mobilePlaybackCss + '</style></head>')
