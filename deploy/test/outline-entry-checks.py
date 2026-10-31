@@ -54,7 +54,7 @@ async function fixtureFetch(...args){const r=await fetch(...args);fixtureHttp=r.
  }
  fixtureStep='outline_generate';
  const started=Date.now();
- const response=await fixtureFetch(base+'/api/ppt/outline',{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({prompt:'调查目前宁波就业市场，形成公开来源的十页培训汇报',pageCount:10,motionMode:'auto',skillId:'auto'}),signal:AbortSignal.timeout(140000)});
+ const response=await fixtureFetch(base+'/api/ppt/outline',{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({prompt:'调查目前宁波就业市场，形成公开来源的十页培训汇报',pageCount:10,motionMode:'auto',skillId:process.env.OUTLINE_FIXTURE_CASE.startsWith('skill-')?'executive-briefing':'auto'}),signal:AbortSignal.timeout(140000)});
  const value=await response.json();
  let built=false;
  if(adminVerified){
@@ -148,6 +148,8 @@ def main():
         "ordinary": (200, None, 1),
         "no-search-key": (200, None, 1),
         "admin": (200, None, 2),
+        "highlight-repair": (200, None, 2), "skill-repair": (200, None, 2),
+        "skill-invalid": (422, "PPT_SKILL_UNSUPPORTED", 2), "json-repair": (200, None, 2),
     }
     try:
         with tempfile.TemporaryDirectory(prefix="outline-entry-fixture-") as folder:
@@ -195,6 +197,27 @@ def main():
                         raise AssertionError("Unexpected search or model invocation count")
                     if data.get("http") != status or data.get("code") != code:
                         raise AssertionError("Public error contract mismatch")
+                    attempts = [json.loads(line[len("ppt_outline_attempt "):]) for line in raw.splitlines()
+                                if line.startswith("ppt_outline_attempt ")]
+                    if len(attempts) != models or [a['attempt'] for a in attempts] != list(range(1, models + 1)):
+                        raise AssertionError("Missing or duplicated per-attempt accounting")
+                    if len({a['requestId'] for a in attempts}) != 1:
+                        raise AssertionError("Attempt request identity mismatch")
+                    for index, attempt in enumerate(attempts):
+                        expected_success = status == 200 and index == models - 1
+                        if attempt['outcome'] != ('success' if expected_success else 'failure'):
+                            raise AssertionError("Incorrect attempt outcome")
+                        unknown_usage = case == 'upstream' or case == 'timeout' and index == 1
+                        expected_usage = None if unknown_usage else dict(promptTokens=100, completionTokens=50,
+                            totalTokens=150, cacheHitTokens=80, cacheMissTokens=20, reasoningTokens=5)
+                        if attempt.get('usage') != expected_usage:
+                            raise AssertionError("Provider usage was invented, lost or double counted")
+                    if case in ('highlight-repair', 'skill-repair', 'skill-invalid', 'json-repair'):
+                        expected_category = {'highlight-repair': 'schema', 'json-repair': 'json'}.get(case, 'skill')
+                        if attempts[0].get('category') != expected_category:
+                            raise AssertionError("Repair classification mismatch")
+                    if status != 200 and data.get('built'):
+                        raise AssertionError("Failed outline entered courseware build")
                     if status == 200 and (data.get("pages"), data.get("research")) != (10, "not-required"):
                         raise AssertionError("Response is not a complete ordinary deck")
                     if case == "timeout" and data["elapsedMs"] < 44_000:

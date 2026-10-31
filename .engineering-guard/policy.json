@@ -129,6 +129,12 @@
         "approval_source": "Owner-approved end-to-end repair/deploy/real-PPT acceptance plan explicitly authorizes fixing in-scope failures in this round through Issue/worktree/tests/push/PR and owner merge; owner confirmed PR37 merge and continued deployment on 2026-10-31. Actual ranking-layout failure triggers this scoped renderer/QA repair; no auto merge, new model calls, budget increase or unchecked deployment.",
         "plan": "docs/plans/issue-38-ranking-text-fit.md",
         "plan_sha256": "d3c55d1b7b9e0b9f07d82058d4d6bc2f0a5b8840fd2aac520626d32dafba6dcf"
+      },
+      "40": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/40",
+        "plan": "docs/plans/issue-40-outline-repair-usage.md",
+        "plan_sha256": "f139b275f338534695e463e73953fc35bafd2c169d6a600065a1ef59d7813d8d",
+        "approval_source": "Owner explicitly approved implementation of the complete outline repair, G-drive current-version backup and exact three-old-backup cleanup plan on 2026-10-31. Code/tests/push/PR authorized; owner alone merges. Only after owner merge: direct deployment and one real outline request, at most two model attempts; no search or extra connection test."
       }
     }
   }
