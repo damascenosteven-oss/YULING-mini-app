@@ -99,6 +99,20 @@ async function fixtureFetch(...args){const r=await fetch(...args);fixtureHttp=r.
    if(await page.getByLabel('API Key',{exact:true}).inputValue()!=='')throw Error('UI key leak');
    if(!await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))throw Error('mobile overflow');
    await page.screenshot({path:'/tmp/model-settings-mobile.png',fullPage:true});
+   fixtureStep='preview';
+   const desktop=await browser.newContext({viewport:{width:1920,height:1080},deviceScaleFactor:1});
+   const playback=await desktop.newPage();await playback.goto(base+result.viewerUrl);
+   const frame=playback.frames().find(f=>f.url().includes('/api/ppt/decks/'));if(!frame)throw Error('ranking preview frame');
+   await frame.waitForSelector('.slide');await frame.evaluate(()=>window.show(7,true));
+   await frame.waitForFunction(()=>Array.from(document.querySelectorAll('.slide.active [data-a]')).every(el=>Number(getComputedStyle(el).opacity)>=.94),null,{timeout:10000});
+   const rankingFit=await frame.evaluate(()=>{
+    const slide=document.querySelector('.slide.active');const svg=slide.querySelector('figure[data-chart="ranking"] svg');if(!svg)return false;const bounds=svg.getBoundingClientRect();
+    const titles=Array.from(slide.querySelectorAll('.ai-podium-card strong')).every(el=>el.getBoundingClientRect().width>=parseFloat(getComputedStyle(el).fontSize)*2);
+    const values=Array.from(svg.querySelectorAll('text')).every(el=>{const box=el.getBoundingClientRect();return box.left>=bounds.left-3&&box.right<=bounds.right+3;});
+    return titles&&values&&slide.querySelector('.ai-data-meta').textContent.includes('单位：报名指数（演示）');
+   });if(!rankingFit)throw Error('ranking descriptive unit clipping');
+   await playback.screenshot({path:'/tmp/ranking-unit-fit.png'});await desktop.close();
+
   }finally{await browser.close();}
  }
  console.log(JSON.stringify({http:response.status,code:value.code,pages:value.slides?.length,research:value.research?.status,sources:value.research?.sources?.length,elapsedMs:Date.now()-started,adminVerified,built}));
@@ -198,6 +212,7 @@ def main():
                     if case == "admin":
                         shot = args.output.with_name("model-settings-mobile.png")
                         run("docker", "cp", name + ":/tmp/model-settings-mobile.png", shot)
+                        run("docker", "cp", name + ":/tmp/ranking-unit-fit.png", args.output.with_name("ranking-unit-fit.png"))
                         result["mobile_ui_checked"] = True
                         run("docker", "rm", "-f", name)
                         spec = importlib.util.spec_from_file_location("model_persistence", HERE / "model-persistence-checks.py")
