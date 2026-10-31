@@ -90,6 +90,7 @@ https.request = function (input, options, callback) {
   if (models === 2 && ['repair', 'invalid', 'timeout', 'admin'].includes(scenario)) {
    const repair = body.messages.find(m => m.role === 'user').content;
    assert.ok(repair.includes(marker) && repair.includes('slides.1.items')); assert.ok(!repair.includes('slides.1.tagline'));
+   if (scenario === 'admin') assert.ok(repair.includes('slides.8.totalRow') && repair.includes('slides.2.story'));
   }
   if (models === 2 && ['highlight-repair', 'skill-repair', 'skill-invalid', 'json-repair'].includes(scenario)) {
    const repair = body.messages.find(m => m.role === 'user').content;
@@ -103,6 +104,14 @@ https.request = function (input, options, callback) {
   if (scenario === 'timeout' && models === 2) { options.signal.addEventListener('abort', () => request.destroy(new DOMException('fixture timeout', 'AbortError')), { once: true }); return; }
   if (scenario === 'upstream') { respond(503, 'PRIVATE_PROVIDER_BODY_SENTINEL'); return; }
   const result = structuredClone(deck);
+  if (scenario === 'admin') {
+   result.slides[2] = { ...structuredClone(highlightPage), id: 'story-required' };
+   result.slides[8] = { ...structuredClone(highlightPage), id: 'summary-required', totalRow: 1 };
+   if (models === 1) {
+    delete result.slides[2].story;
+    result.slides[8].totalRow = { label: '合计', values: [3] };
+   }
+  }
   if (['highlight-repair', 'skill-repair', 'skill-invalid'].includes(scenario)) {
    result.slides[7] = structuredClone(highlightPage);
    if (scenario === 'highlight-repair' && models === 1) result.slides[7].highlights = [{ row: 2, column: 1, tone: 'focus' }];

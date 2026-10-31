@@ -135,6 +135,12 @@
         "plan": "docs/plans/issue-40-outline-repair-usage.md",
         "plan_sha256": "f139b275f338534695e463e73953fc35bafd2c169d6a600065a1ef59d7813d8d",
         "approval_source": "Owner explicitly approved implementation of the complete outline repair, G-drive current-version backup and exact three-old-backup cleanup plan on 2026-10-31. Code/tests/push/PR authorized; owner alone merges. Only after owner merge: direct deployment and one real outline request, at most two model attempts; no search or extra connection test."
+      },
+      "42": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/42",
+        "plan": "docs/plans/issue-42-combined-outline-feedback.md",
+        "plan_sha256": "d6029f6de352a06fb6455ac33f3b5ee44f5fc3bacced636873b367fa94278b03",
+        "approval_source": "Owner-approved outline repair/deployment plan explicitly authorizes immediate in-scope diagnosis and follow-up code repair via Issue, tests, PR and owner merge after real acceptance fails. This follow-up completes accurate combined schema/Skill repair constraints; no automatic merge, changed model budget or extra paid request."
       }
     }
   }

@@ -7,6 +7,7 @@ import {
   type OutlineAttemptRecord,
 } from './deepseek';
 import { deckOutlineSchema, slideSchema } from './schema';
+import { PRESENTATION_SKILLS, skillSlideError } from './skills';
 
 const prompt = '请介绍团队如何安全使用人工智能提高日常办公效率';
 const bullets = { id: 'points', type: 'bullets', variant: 'three-cards', theme: 'blue', title: '团队行动', items: ['建立检查清单', '复核事实来源'] };
@@ -270,6 +271,68 @@ test('known Skill errors repair with exact field and draft and record each attem
     assert.match(repair, /上次草稿/);
     assert.deepEqual(events.map(e => [e.attempt, e.outcome, e.stage]), [[1, 'failure', 'skill'], [2, 'success', 'skill']]);
     assert.ok(events.every(e => e.model === 'deepseek-flash' && e.usage?.totalTokens === 120));
+  });
+});
+
+test('mixed schema and Skill defects are reported together before the single repair', async () => {
+  const bad = structuredClone(deck) as unknown as { slides: Array<Record<string, unknown>> };
+  Object.assign(bad.slides[1], { ...highlight, id: 'summary', highlights: [], totalRow: { label: '合计', values: [3] } });
+  Object.assign(bad.slides[2], { ...highlight, id: 'evidence', highlights: [] });
+  const good = structuredClone(bad);
+  good.slides[1].totalRow = 1;
+  for (const index of [1, 2]) good.slides[index].story = { question: '比较什么', claim: '需要核验', implication: '统一口径', focusKeys: ['甲'] };
+  const before = JSON.stringify(bad);
+  const failures: OutlineAttemptFailure[] = [];
+  await scenario([() => modelResponse(bad), () => modelResponse(good)], async (requests, searches) => {
+    const result = await generateOutline(prompt, 6, 'data-research-report', f => failures.push(f));
+    assert.equal(result.slides.length, 6);
+    assert.equal(requests.length, 2);
+    assert.equal(searches(), 0);
+    assert.match(failures[0].constraint, /slides\.1\.totalRow/);
+    assert.match(failures[0].constraint, /slides\.2\.story/);
+    const repair = (requests[1].messages as Array<{ role: string; content: string }>).find(m => m.role === 'user')!.content;
+    assert.match(repair, /slides\.1\.totalRow/);
+    assert.match(repair, /slides\.2\.story/);
+    assert.match(repair, /上次草稿/);
+    assert.equal(JSON.stringify(bad), before);
+  });
+});
+
+test('all independently valid data pages report missing story in the same repair', async () => {
+  const bad = structuredClone(deck);
+  for (const index of [1, 2, 4]) Object.assign(bad.slides[index], { ...highlight, id: `data-${index}`, highlights: [] });
+  const failures: OutlineAttemptFailure[] = [];
+  await scenario([() => modelResponse(bad), () => modelResponse(bad)], async requests => {
+    await assert.rejects(generateOutline(prompt, 6, 'executive-briefing', f => failures.push(f)), /缺少数据故事/);
+    assert.equal(requests.length, 2);
+    for (const index of [1, 2, 4]) assert.ok(failures[0].constraint.includes(`slides.${index}.story`));
+  });
+});
+
+test('highlight prompt example satisfies research Skill without inventing a summary row', async () => {
+  await scenario([() => modelResponse(deck)], async requests => {
+    await generateOutline(prompt, 6, 'data-research-report');
+    const system = (requests[0].messages as Array<{ role: string; content: string }>)[0].content;
+    const example = system.match(/高亮表示例：(\{[^\n]+\})。/)?.[1];
+    assert.ok(example);
+    const page = slideSchema.parse(JSON.parse(example));
+    assert.equal(skillSlideError(page, 0, PRESENTATION_SKILLS['data-research-report']), undefined);
+    assert.match(system, /totalRow是rows中已有行的整数索引/);
+  });
+});
+
+test('unexpected failure collecting combined feedback remains internal and never retries', async () => {
+  const events: OutlineAttemptRecord[] = [];
+  const allowed = PRESENTATION_SKILLS['data-research-report'].allowed;
+  const original = allowed.has;
+  await scenario([() => modelResponse(invalidDeck())], async requests => {
+    allowed.has = () => { throw new Error('PRIVATE_COLLECTOR_ERROR'); };
+    try { await assert.rejects(generateOutline(prompt, 6, 'data-research-report', undefined, e => events.push(e)), /PRIVATE_COLLECTOR_ERROR/); }
+    finally { allowed.has = original; }
+    assert.equal(requests.length, 1);
+    assert.equal(events[0].category, 'internal');
+    assert.equal(events[0].stage, 'schema');
+    assert.doesNotMatch(JSON.stringify(events), /PRIVATE_COLLECTOR_ERROR/);
   });
 });
 
