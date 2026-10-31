@@ -31,8 +31,24 @@ async function checkSwipes(context, page, frame) {
 export async function checkMobilePlayback(browser, url, reducedMotion = 'no-preference', requireSteps = true) {
   const context = await browser.newContext({ viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true, reducedMotion });
   await context.addInitScript(() => {
-    const counters = { listeners: 0, particles: 0, particleFrames: 0, observers: 0 };
+    const counters = { listeners: 0, particles: 0, particleFrames: 0, frames: 0, pendingFrames: 0, observers: 0 };
     window.__playbackTest = counters;
+    const frame = window.requestAnimationFrame;
+    const cancelFrame = window.cancelAnimationFrame;
+    const pendingFrames = new Set();
+    window.requestAnimationFrame = callback => {
+      counters.frames++;
+      const id = frame.call(window, time => {
+        pendingFrames.delete(id); counters.pendingFrames = pendingFrames.size;
+        callback(time);
+      });
+      pendingFrames.add(id); counters.pendingFrames = pendingFrames.size;
+      return id;
+    };
+    window.cancelAnimationFrame = id => {
+      pendingFrames.delete(id); counters.pendingFrames = pendingFrames.size;
+      cancelFrame.call(window, id);
+    };
     const add = EventTarget.prototype.addEventListener;
     EventTarget.prototype.addEventListener = function (...args) { counters.listeners++; return add.apply(this, args); };
     const OriginalObserver = window.IntersectionObserver;
@@ -232,8 +248,11 @@ export async function checkMobilePlayback(browser, url, reducedMotion = 'no-pref
     await frame.evaluate(i => show(i, true), ordinary);
     await stable();
     const particleFrames = await frame.evaluate(() => window.__playbackTest.particleFrames);
+    const frameRequests = await frame.evaluate(() => window.__playbackTest.frames);
     await page.waitForTimeout(160);
     assert.equal(await frame.evaluate(() => window.__playbackTest.particleFrames), particleFrames, 'invisible particle canvas must stop drawing');
+    assert.equal(await frame.evaluate(() => window.__playbackTest.frames), frameRequests, 'hidden particles must stop scheduling idle animation frames');
+    assert.equal(await frame.evaluate(() => window.__playbackTest.pendingFrames), 0, 'hidden playback must not retain a pending animation frame');
     for (let i = 0; i < count; i++) {
       await frame.evaluate(index => show(index, true), i);
       await stable();
