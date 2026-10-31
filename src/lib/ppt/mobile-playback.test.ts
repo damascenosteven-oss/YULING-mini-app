@@ -19,7 +19,10 @@ test('browser QA mobile playback lifecycle through sandboxed share iframe', asyn
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     if (req.url === '/deck') {
       res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:");
-      res.end(adaptMobilePlayback(html.toString()));
+      // A frame can boot before its charts have measurable geometry. Exercise
+      // the engine's real lazy SVG drawing when a chart first becomes visible.
+      const deferredCharts = '<style>body[data-yuling-playback]:not(.yuling-playback-ready) figure.chart{display:none!important}</style>';
+      res.end(adaptMobilePlayback(html.toString()).replace('</head>', deferredCharts + '</head>'));
     } else res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><iframe style="position:fixed;inset:0;width:100%;height:100%;border:0" sandbox="allow-scripts allow-downloads" src="/deck"></iframe>');
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));

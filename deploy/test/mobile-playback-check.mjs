@@ -53,6 +53,7 @@ export async function checkMobilePlayback(browser, url, reducedMotion = 'no-pref
       return frame.evaluate(() => {
         const actual = [...document.querySelectorAll('#stage > .slide')];
         return {
+          page: current,
           active: actual.filter(s => s.classList.contains('active')).length,
           leaving: actual.filter(s => s.classList.contains('leaving')).length,
           drawn: actual.filter(s => getComputedStyle(s).display !== 'none').length,
@@ -85,15 +86,30 @@ export async function checkMobilePlayback(browser, url, reducedMotion = 'no-pref
     assert.ok((await frame.locator('.map-tile').first().boundingBox()).height >= 44, 'mobile map needs an unscaled touch target');
     assert.ok((await frame.locator('.map-meta span').first().boundingBox()).height >= 14, 'mobile map titles must stay legible');
     await frame.locator('.map-tile').nth(1).click();
+    await frame.waitForFunction(() => current === 1);
+    // The engine defers SVG creation until a chart has a visible size.
+    // Visit every page once, then compare completed laps at the same cover.
+    for (let i = 1; i <= count; i++) {
+      await frame.evaluate(index => show(index, true), i % count);
+      assert.ok(await frame.evaluate(() => [...slides[current].querySelectorAll('figure.chart')]
+        .every(figure => figure.dataset.chartRendered === 'true' && figure.clientWidth > 0 && figure.clientHeight > 0)),
+      'visible chart must finish drawing before measuring retained resources');
+    }
     const before = await stable();
-    for (let i = 0; i < 100; i++) {
+    assert.equal(before.page, 0);
+    function checkResourceCounts(measured) {
+      assert.equal(measured.page, before.page, 'compare at the same visible page');
+      assert.equal(measured.nodes, before.nodes, 'DOM count changed after a completed lap');
+      assert.equal(measured.listeners, before.listeners, 'listener count changed after a completed lap');
+    }
+    for (let i = 1; i <= 100; i++) {
       // WebKit bounds history writes per 10s. Rapid reversal is tested separately.
       await page.waitForTimeout(150);
       await frame.evaluate(index => show(index, true), i % count);
       const s = await sample();
       assert.equal(s.active, 1); assert.ok(s.leaving <= 1); assert.ok(s.drawn <= 2);
-      if (i % 10 === 9) {
-        await stable();
+      if (i % count === 0) {
+        checkResourceCounts(await stable());
         await frame.evaluate(() => { openMap(); closeMap(); });
       }
     }
@@ -101,7 +117,7 @@ export async function checkMobilePlayback(browser, url, reducedMotion = 'no-pref
     await page.waitForTimeout(900); // Also catches the obsolete engine 800ms callback.
     assert.equal(await frame.locator('.slide.active.leaving').count(), 0);
     const after = await stable();
-    assert.equal(after.nodes, before.nodes); assert.equal(after.listeners, before.listeners);
+    checkResourceCounts(after);
     assert.deepEqual(errors, []);
     const stepsPresent = await frame.evaluate(() => {
       const index = slides.findIndex(s => s.querySelector('[data-step]'));
