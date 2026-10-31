@@ -10,6 +10,7 @@ import tempfile
 import uuid
 import importlib.util
 import sys
+import ast
 from http_evidence import atomic_json, checker_digest, failure, resources, validate_report
 
 HERE = Path(__file__).resolve().parent
@@ -122,7 +123,11 @@ async function fixtureFetch(...args){const r=await fetch(...args);fixtureHttp=r.
  }
  console.log(JSON.stringify({http:response.status,code:value.code,pages:value.slides?.length,research:value.research?.status,sources:value.research?.sources?.length,elapsedMs:Date.now()-started,adminVerified,built}));
 })().catch(error=>{
+ const playbackLine = fixtureStep === 'mobile_playback' && typeof error?.stack === 'string'
+   ? error.stack.match(/^\s*at (?:[^\n(]* \()?(?:file:\/\/)?\/tmp\/mobile-playback-check\.mjs:([1-9]\d{0,3}):\d+\)?$/m)
+   : null;
  console.log(JSON.stringify({fixture_failure:true,step:fixtureStep,http:fixtureHttp,
+  ...(playbackLine ? {playbackLine:Number(playbackLine[1])} : {}),
   kind:error?.name==='TimeoutError'||error?.name==='AbortError'?'timeout':error?.name==='TypeError'?'runtime_error':'assertion',elapsedMs:Date.now()-fixtureStarted}));
  process.exitCode=1;
 });
@@ -166,6 +171,11 @@ def main():
                                    (HERE / playback.name, playback)):
                 shutil.copyfile(source, staged)
                 os.chmod(staged, 0o644)
+            # Test-only reverse map is derived from the canonical source rather
+            # than maintaining another copy of the engine instrumentation.
+            patches = (HERE.parents[1] / "src/lib/ppt/mobile-playback-lifecycle.ts").read_text()
+            pairs = ast.literal_eval('[' + patches.split('export const playbackRewrites:', 1)[1].split('= [', 1)[1].rsplit('];', 1)[0] + ']')
+            fixture.write_text("const playbackFixtureRewrites=" + json.dumps(pairs) + ";\n" + fixture.read_text())
             report["fixture_sha256"] = hashlib.sha256(fixture.read_bytes()).hexdigest()
             for case, (status, code, models) in expected.items():
                 name = "yuling-outline-entry-" + uuid.uuid4().hex[:12]
