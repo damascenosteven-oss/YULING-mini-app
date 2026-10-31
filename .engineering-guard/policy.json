@@ -149,6 +149,12 @@
         "plan_sha256": "e49e8ca0e178a94cf514ee2610d745d3eec90489a5a505d890d6d8a19be60f5f",
         "adr": "docs/adr/0015-mobile-playback.md",
         "adr_sha256": "c6d0452683d25a9fcf93086821bcd88a99dd6d9e7beb9eb5cd44b8fe59e1e71d"
+      },
+      "46": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/46",
+        "plan": "docs/plans/issue-46-playback-evidence.md",
+        "plan_sha256": "d6cf860a2fb7fcead89e8c15f4a2acd676382b0f3aa068e089cb730ae8a117a4",
+        "approval_source": "Continuation of the owner-approved Issue #44 mobile playback acceptance and failure diagnosis via Issue/PR. Owner has merged #45. This follow-up preserves assertions and records sanitized source-bound test locations; owner reviews and merges. No server cleanup or paid calls authorized."
       }
     }
   }

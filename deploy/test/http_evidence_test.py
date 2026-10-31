@@ -22,6 +22,34 @@ def report(passed=False):
 
 
 class Evidence(unittest.TestCase):
+    def test_playback_fault_keeps_only_fixture_line_through_node_and_report(self):
+        import runpy
+        client = runpy.run_path(str(Path(__file__).with_name('outline-entry-checks.py')))['CLIENT']
+        # Fault in a virtual copy of the named test script; run the real client catch.
+        suffix = client.split('})().catch(error=>{', 1)[1]
+        script = """let fixtureStep='mobile_playback',fixtureHttp=200,fixtureStarted=Date.now();
+        (async()=>{require('node:vm').runInThisContext("throw Error('PRIVATE_MODEL_BODY')",
+          {filename:'/tmp/mobile-playback-check.mjs',lineOffset:31});})().catch(error=>{""" + suffix
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn('PRIVATE_MODEL_BODY', result.stdout + result.stderr)
+        error = subprocess.CalledProcessError(result.returncode, ['node'], output=result.stdout)
+        detail = evidence.failure(error, 'http_client')
+        self.assertEqual(detail['failure']['playback_line'], 32)
+        data = report(True)
+        data['passed'] = False
+        data['cases'] = data['cases'][:evidence.CASES.index('admin') + 1]
+        data['cases'][-1].update(detail, passed=False)
+        evidence.validate_report(data, 'a' * 40)
+        for bad in ('PRIVATE_MODEL_BODY', True, 0, 10000):
+            data['cases'][-1]['failure']['playback_line'] = bad
+            with self.assertRaises(evidence.EvidenceError):
+                evidence.validate_report(data, 'a' * 40)
+        data['cases'][-1]['failure']['playback_line'] = 32
+        data['cases'][-1]['step'] = 'model_read'
+        with self.assertRaises(evidence.EvidenceError):
+            evidence.validate_report(data, 'a' * 40)
+
     def test_allowlist_rejects_sensitive_unknown_and_wrong_identity(self):
         for mutate in (lambda d: d.update(password='PRIVATE_SECRET'),
                        lambda d: d['cases'][0].update(step='PRIVATE_PROMPT'),

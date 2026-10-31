@@ -122,7 +122,11 @@ async function fixtureFetch(...args){const r=await fetch(...args);fixtureHttp=r.
  }
  console.log(JSON.stringify({http:response.status,code:value.code,pages:value.slides?.length,research:value.research?.status,sources:value.research?.sources?.length,elapsedMs:Date.now()-started,adminVerified,built}));
 })().catch(error=>{
+ const playbackLine = fixtureStep === 'mobile_playback' && typeof error?.stack === 'string'
+   ? error.stack.match(/^\s*at (?:[^\n(]* \()?(?:file:\/\/)?\/tmp\/mobile-playback-check\.mjs:([1-9]\d{0,3}):\d+\)?$/m)
+   : null;
  console.log(JSON.stringify({fixture_failure:true,step:fixtureStep,http:fixtureHttp,
+  ...(playbackLine ? {playbackLine:Number(playbackLine[1])} : {}),
   kind:error?.name==='TimeoutError'||error?.name==='AbortError'?'timeout':error?.name==='TypeError'?'runtime_error':'assertion',elapsedMs:Date.now()-fixtureStarted}));
  process.exitCode=1;
 });
