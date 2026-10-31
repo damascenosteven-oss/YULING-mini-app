@@ -106,6 +106,7 @@ body[data-yuling-playback="light-v1"] *,
 body[data-yuling-playback="light-v1"] *::before,
 body[data-yuling-playback="light-v1"] *::after { filter:none!important; backdrop-filter:none!important; -webkit-backdrop-filter:none!important; animation:none!important; will-change:auto!important; }
 body[data-yuling-playback="light-v1"] #viewport { transition:none; }
+body[data-yuling-playback="light-v1"] #stage { touch-action:pan-y pinch-zoom; }
 body[data-yuling-playback="light-v1"] #backdrop,
 body[data-yuling-playback="light-v1"] #nightsky,
 body[data-yuling-playback="light-v1"] #particles,

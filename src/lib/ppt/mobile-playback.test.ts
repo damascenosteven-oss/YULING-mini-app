@@ -20,7 +20,7 @@ test('browser QA mobile playback lifecycle through sandboxed share iframe', asyn
     if (req.url === '/deck') {
       res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:");
       res.end(adaptMobilePlayback(html.toString()));
-    } else res.end('<iframe style="position:fixed;inset:0;width:100%;height:100%;border:0" sandbox="allow-scripts allow-downloads" src="/deck"></iframe>');
+    } else res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><iframe style="position:fixed;inset:0;width:100%;height:100%;border:0" sandbox="allow-scripts allow-downloads" src="/deck"></iframe>');
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();

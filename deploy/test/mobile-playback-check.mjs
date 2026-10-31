@@ -1,6 +1,32 @@
 import assert from 'node:assert/strict';
 /* global window, document, HTMLCanvasElement, getComputedStyle, show, openMap, closeMap, slides, current, hasHiddenStep, advance, toggleAutoplay, autoplayTimer, PageTransitionEvent */
 
+// Browser-level gestures can navigate the parent instead of firing deck controls.
+async function checkSwipes(context, page, frame) {
+  const startUrl = page.url();
+  const stage = frame.locator('#stage');
+  await frame.evaluate(() => show(0, true));
+  const box = await stage.boundingBox();
+  assert.ok(box && box.width > 0 && box.height > 0);
+  const cdp = await context.newCDPSession(page);
+  try {
+    for (const next of [1, 0]) {
+      const left = box.x + box.width * 0.2;
+      const right = box.x + box.width * 0.8;
+      const start = next ? right : left, end = next ? left : right;
+      const points = x => [{ x, y: box.y + box.height / 2, id: 1 }];
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: points(start) });
+      for (let i = 1; i <= 3; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(start + (end - start) * i / 3) });
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(250);
+      assert.equal(page.url(), startUrl, 'swiping slides must not navigate the share page');
+      assert.equal(await frame.evaluate(() => current), next);
+    }
+  } finally { await cdp.detach(); }
+}
+
 // Shared by the synthetic browser regression and the actual HTTP image entry.
 export async function checkMobilePlayback(browser, url, reducedMotion = 'no-preference', requireSteps = true) {
   const context = await browser.newContext({ viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true, reducedMotion });
@@ -48,6 +74,9 @@ export async function checkMobilePlayback(browser, url, reducedMotion = 'no-pref
       return s;
     }
     await stable();
+    if (browser.browserType().name() === 'chromium') await checkSwipes(context, page, frame);
+    const pan = await frame.locator('#stage').evaluate(el => getComputedStyle(el).touchAction);
+    assert.deepEqual(pan.split(' ').sort(), ['pan-y', 'pinch-zoom'], 'vertical scrolling and pinch zoom must remain available');
     await frame.evaluate(() => { openMap(); closeMap(); });
     assert.equal(await frame.locator('.map-tile').count(), count);
     assert.equal(await frame.locator('.map-mini, .map-screen, #map .slide').count(), 0);
