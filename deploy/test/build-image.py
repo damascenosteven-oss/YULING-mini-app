@@ -18,6 +18,8 @@ import urllib.error
 import urllib.request
 
 HERE = Path(__file__).resolve().parents[2]
+DEPENDENCY_INPUTS = ("package.json", "pnpm-lock.yaml",
+                     "patches/eslint-plugin-import-x@4.17.1.patch")
 
 
 def run(*args, **kwargs):
@@ -154,11 +156,24 @@ def prepare_downloads(target, lock, runtime_cache=None, offline=False, seed_dir=
 
 def dependency_identity():
     digest = hashlib.sha256(b"linux/amd64\0")
-    for name in ("package.json", "pnpm-lock.yaml", "deploy/test/runtime-lock.json"):
+    for name in (*DEPENDENCY_INPUTS, "deploy/test/runtime-lock.json"):
+        source = HERE / name
+        if not sha_file_is_regular(source) or not source.resolve().is_relative_to(HERE.resolve()):
+            raise RuntimeError("Dependency input is missing or unsafe: " + name)
         digest.update(name.encode() + b"\0")
-        digest.update((HERE / name).read_bytes())
+        digest.update(source.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def copy_dependency_inputs(project, names=DEPENDENCY_INPUTS):
+    for name in names:
+        source = HERE / name
+        if not sha_file_is_regular(source) or not source.resolve().is_relative_to(HERE.resolve()):
+            raise RuntimeError("Dependency input is missing or unsafe: " + name)
+        destination = project / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
 
 
 def dependency_tree_digest(store):
@@ -202,8 +217,7 @@ def audit_dependencies(target, downloads, lock):
         node, pnpm = dependency_toolchain(downloads, stage, lock)
         project = stage / "project"
         project.mkdir()
-        for name in ("package.json", "pnpm-lock.yaml"):
-            shutil.copyfile(HERE / name, project / name)
+        copy_dependency_inputs(project)
         return run_audits(project, node, pnpm, target / "fresh-audits", sha(HERE / "deploy/test/runtime-lock.json"))
 
 
@@ -214,13 +228,13 @@ def populate_dependency_store(stage, downloads, lock):
     verify = stage / "verify-project"
     fetch.mkdir()
     verify.mkdir()
-    shutil.copyfile(HERE / "pnpm-lock.yaml", fetch / "pnpm-lock.yaml")
-    for name in ("package.json", "pnpm-lock.yaml"):
-        shutil.copyfile(HERE / name, verify / name)
+    # Prefetch only downloads locked content; the offline install below runs scripts.
+    copy_dependency_inputs(fetch, DEPENDENCY_INPUTS[1:])
+    copy_dependency_inputs(verify)
     env = os.environ.copy()
     env["PATH"] = str(node.parent) + os.pathsep + env.get("PATH", "")
     env["NODE_ENV"] = "development"
-    command = [str(node), str(pnpm), "fetch", "--store-dir", str(store)]
+    command = [str(node), str(pnpm), "fetch", "--ignore-scripts", "--store-dir", str(store)]
     for attempt in range(3):
         try:
             subprocess.run(command, cwd=fetch, env=env, check=True, timeout=300,

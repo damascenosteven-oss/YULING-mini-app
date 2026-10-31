@@ -23,6 +23,49 @@ class DependencyInstallContractTests(unittest.TestCase):
         self.assertIn("npm_config_offline=true", dockerfile)
         self.assertIn("COPY --from=dependency_store", dockerfile)
         self.assertIn("RUN --network=none npm_config_offline=true pnpm install", dockerfile)
+        self.assertLess(dockerfile.index("COPY patches ./patches"),
+                        dockerfile.index("RUN --network=none npm_config_offline=true pnpm install"))
+
+    def test_patch_bytes_are_part_of_cache_identity(self):
+        builder = load_builder()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in ("package.json", "pnpm-lock.yaml", "deploy/test/runtime-lock.json",
+                         "patches/eslint-plugin-import-x@4.17.1.patch"):
+                file = root / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_bytes(b"fixture")
+            with patch.object(builder, "HERE", root):
+                before = builder.dependency_identity()
+                (root / "patches/eslint-plugin-import-x@4.17.1.patch").write_bytes(b"different patch")
+                self.assertNotEqual(builder.dependency_identity(), before)
+                (root / "patches/eslint-plugin-import-x@4.17.1.patch").unlink()
+                with self.assertRaises((OSError, RuntimeError)):
+                    builder.dependency_identity()
+
+    def test_real_prefetch_entry_copies_patch_before_fetch_and_install(self):
+        builder = load_builder()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "toolchain").mkdir()
+            calls = []
+            def command(args, **kwargs):
+                project = Path(kwargs["cwd"])
+                self.assertEqual((project / "patches/eslint-plugin-import-x@4.17.1.patch").read_bytes(),
+                                 (builder.HERE / "patches/eslint-plugin-import-x@4.17.1.patch").read_bytes())
+                calls.append("fetch" if "fetch" in args else "install")
+                if "fetch" in args:
+                    self.assertIn("--ignore-scripts", args)
+                    self.assertFalse((project / "package.json").exists(),
+                                     "Prefetch must keep its lockfile-only lifecycle behavior")
+                    store = Path(args[args.index("--store-dir") + 1])
+                    store.mkdir()
+                    (store / "pinned-package").write_bytes(b"fixture")
+                return subprocess.CompletedProcess(args, 0)
+            with patch.object(builder, "dependency_toolchain", return_value=(root / "node", root / "pnpm")), \
+                    patch.object(builder.subprocess, "run", side_effect=command):
+                builder.populate_dependency_store(root, root, {})
+            self.assertEqual(calls, ["fetch", "install"])
 
     def test_cache_hit_is_offline_and_rejects_corruption(self):
         builder = load_builder()
