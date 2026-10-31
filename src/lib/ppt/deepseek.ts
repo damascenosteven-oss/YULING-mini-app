@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { deckOutlineSchema, slideSchema, type DeckOutline } from './schema';
-import { resolveSkill, validateSkillDeck, UnsupportedSkillError, type PresentationSkill } from './skills';
+import { resolveSkill, skillSlideError, validateSkillDeck, UnsupportedSkillError, type PresentationSkill } from './skills';
 import type { PublicSkillId } from './schema';
 import {
   researchContext,
@@ -93,12 +93,12 @@ type 与 variant 组合只能是：
 - methodology: score-model；另有 formula 和 components（2-6项 label/weight/description，权重合计100）
 - table: data-table；另有 headers（2-6列）和 rows（2-8行，每行 label/values）
 - table: highlight-table；在 data-table 基础上增加 highlights（row/column/tone=best|risk|focus）和可选 totalRow
-- highlights.row 必须为0到rows.length-1；highlights.column 必须为0到headers.length-2，对应每行values的索引，不包含label标签列。totalRow也从0开始。不确定是否高亮时可在首次生成时省略highlights，不得生成越界索引。
+- highlights.row 必须为0到rows.length-1；highlights.column 必须为0到headers.length-2，对应每行values的索引，不包含label标签列。totalRow是rows中已有行的整数索引，范围0到rows.length-1；不是汇总行对象，不是新增一行。不确定是否高亮时可在首次生成时省略highlights，不得生成越界索引。
 - table: financial-return；只填写成本与费用，不得放入销售额、收入、订单量等收益指标。另有 currency(CNY|USD)、horizonMonths、investment（必须大于0）、items（2-6项，每项 label/baseline/proposed，proposed 必须小于或等于 baseline）。不要计算或输出 ROI 汇总，后端会确定性计算。
 以下仅演示 JSON 结构，示例数字和文案不得当作本次事实；S1 必须替换为本次证据中实际存在且支持结论的编号，没有证据就使用 demo 并省略 sourceIds。
 要点页示例：{"id":"actions","type":"bullets","variant":"three-cards","theme":"blue","title":"培训行动","items":["核实岗位要求","安排实践复盘"]}。items 必须是字符串数组，不是对象或数字；不要把要点页改成封面。
 数据表示例：{"id":"evidence-table","type":"table","variant":"data-table","theme":"blue","title":"资料对照","dataStatus":"researched","sourceIds":["S1"],"takeaway":"先核对资料口径再制定培训目标","story":{"question":"如何比较资料","claim":"比较前需要一致口径","implication":"先完成资料核验","focusKeys":["项目甲"]},"headers":["项目","数值"],"rows":[{"label":"项目甲","values":[1]},{"label":"项目乙","values":[2]}]}。headers 包含首列标签；每行 label 已是第一列，values 只包含其余列，数量必须等于 headers.length-1；不要在 values 中重复 label。
-高亮表示例：{"id":"comparison-table","type":"table","variant":"highlight-table","theme":"blue","title":"项目比较","dataStatus":"demo","takeaway":"核对数据后再作决策","headers":["项目","数值"],"rows":[{"label":"项目甲","values":[1]},{"label":"项目乙","values":[2]}],"highlights":[{"row":1,"column":0,"tone":"focus"}]}。这里高亮的是第二行的第一个数值，column是0而不是1。修复时不得直接删除错误高亮，应根据实际行列范围修正并保留其他合法内容。
+高亮表示例：{"id":"comparison-table","type":"table","variant":"highlight-table","theme":"blue","title":"项目比较","dataStatus":"demo","takeaway":"核对数据后再作决策","story":{"question":"比较哪些项目","claim":"演示值用于说明比较结构","implication":"核验真实数据后再作决策","focusKeys":["项目乙"]},"headers":["项目","数值"],"rows":[{"label":"项目甲","values":[1]},{"label":"项目乙","values":[2]}],"highlights":[{"row":1,"column":0,"tone":"focus"}]}。这里高亮的是第二行的第一个数值，column是0而不是1。修复时不得直接删除错误高亮，应根据实际行列范围修正并保留其他合法内容。
 所有 kpi/chart/funnel/matrix/ranking/table/heatmap/methodology 数据页必须写 dataStatus，并必须写一句不超过36个汉字的 takeaway，直接说明管理层应从数据中看到的经营结论；可写 unit、note。没有提供检索证据时 dataStatus 必须为 "demo" 且不得伪造 source；提供检索证据时，引用证据的页面使用 "researched" 并填写 sourceIds。不要用定性词伪装成 KPI，也不要为了视觉变化制造无意义数字。
 数据研究报告和管理层经营汇报的所有数据页还必须写 story:{question,claim,implication,focusKeys}。claim 必须是数据支持的结论，不得把没有证据的推断写成事实。
 选图规则：趋势用 line，类目比较用 bar，构成用 donut，转化过程用 funnel，战略定位用 matrix，门店/区域对标用 ranking，投入产出用 financial-return。矩阵 quadrants 必须按左上、右上、左下、右下的顺序提供四个纯字符串标题。普通需求只选最相关的 2-4 类商业图表；只有用户明确要求“全部图表/展示全部商业图表”时，才在 10-12 页内让 KPI、柱或折线、环形、漏斗、矩阵、排名、数据表或财务收益七类各至少出现一次。
@@ -446,7 +446,25 @@ export async function generateOutline(
       if (error instanceof UnsafeRequestError) { category = 'unsafe'; throw error; }
       let failure: OutlineAttemptFailure;
       if (error instanceof z.ZodError) {
-        repair = { feedback: formatValidationIssues(error, context.draft), draft: context.draft };
+        try {
+          const feedback = [formatValidationIssues(error, context.draft)];
+          const slides = context.draft && typeof context.draft === 'object'
+            ? (context.draft as { slides?: unknown }).slides : undefined;
+          // Collect known constraints only from independently valid pages. The
+          // original draft still must pass every full-deck check after repair.
+          if (Array.isArray(slides) && slides.length <= 12) {
+            slides.forEach((slide, index) => {
+              const parsedSlide = slideSchema.safeParse(slide);
+              if (!parsedSlide.success) return;
+              const constraint = skillSlideError(parsedSlide.data, index, skill)?.repairConstraint;
+              if (constraint) feedback.push(constraint);
+            });
+          }
+          repair = { feedback: feedback.join('；'), draft: context.draft };
+        } catch (feedbackError) {
+          category = 'internal';
+          throw feedbackError;
+        }
         failure = { attempt: attempt + 1, category: 'schema', constraint: repair.feedback };
       } else if (error instanceof ModelStructureError) {
         repair = { feedback: error.repairConstraint, draft: context.draft };

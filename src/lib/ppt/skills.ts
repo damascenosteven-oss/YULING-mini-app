@@ -80,16 +80,19 @@ function isDataSlide(slide: Slide): boolean {
   return ['kpi', 'chart', 'funnel', 'matrix', 'ranking', 'table', 'heatmap', 'methodology'].includes(slide.type);
 }
 
+export function skillSlideError(slide: Slide, index: number, skill: PresentationSkill): UnsupportedSkillError | undefined {
+  if (!skill.allowed.has(slideKey(slide))) return new UnsupportedSkillError(`第 ${index + 1} 页不属于 ${skill.label} 的受控结构`, `第${index + 1}页 slides.${index}.variant：请选择当前 Skill 允许的 type:variant：${[...skill.allowed].join('|')}`);
+  if ((skill.id === 'data-research-report' || skill.id === 'executive-briefing') && isDataSlide(slide) && !('story' in slide && slide.story)) {
+    return new UnsupportedSkillError(`第 ${index + 1} 页缺少数据故事`, `第${index + 1}页 slides.${index}.story：必须包含 question、claim、implication 和 focusKeys，说明该页数据的比较问题、结论和行动含义；保留其他合法内容`);
+  }
+}
+
 export function validateSkillDeck(deck: DeckOutline): DeckOutline {
   if (deck.skill.id === 'legacy-general') return deck;
   const skill = PRESENTATION_SKILLS[deck.skill.id];
   if (!skill || deck.skill.version !== skill.version) throw new UnsupportedSkillError('不支持的 Presentation Skill 或版本');
-  deck.slides.forEach((slide, index) => {
-    if (!skill.allowed.has(slideKey(slide))) throw new UnsupportedSkillError(`第 ${index + 1} 页不属于 ${skill.label} 的受控结构`, `第${index + 1}页 slides.${index}.variant：请选择当前 Skill 允许的 type:variant：${[...skill.allowed].join('|')}`);
-    if ((skill.id === 'data-research-report' || skill.id === 'executive-briefing') && isDataSlide(slide) && !('story' in slide && slide.story)) {
-      throw new UnsupportedSkillError(`第 ${index + 1} 页缺少数据故事`, `第${index + 1}页 slides.${index}.story：必须包含 question、claim、implication 和 focusKeys，说明该页数据的比较问题、结论和行动含义；保留其他合法内容`);
-    }
-  });
+  const errors = deck.slides.map((slide, index) => skillSlideError(slide, index, skill)).filter(error => error !== undefined);
+  if (errors.length) throw new UnsupportedSkillError(errors[0].message, errors.map(error => error.repairConstraint).join('；'));
   return deck;
 }
 
