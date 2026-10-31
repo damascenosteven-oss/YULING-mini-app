@@ -6,7 +6,8 @@ from pathlib import Path
 import re
 import uuid
 
-CASES = ('repair', 'invalid', 'timeout', 'upstream', 'json', 'truncated', 'ordinary', 'no-search-key', 'admin')
+CASES = ('repair', 'invalid', 'timeout', 'upstream', 'json', 'truncated', 'ordinary', 'no-search-key', 'admin',
+         'highlight-repair', 'skill-repair', 'skill-invalid', 'json-repair')
 STEPS = {'container_start', 'readiness', 'http_client', 'ordinary_login', 'admin_login', 'model_read', 'model_test',
          'model_save', 'outline_generate', 'motion_refresh', 'python_build', 'preview', 'mobile_page', 'persistence',
          'resource_check', 'contract_check', 'complete'}
@@ -130,7 +131,7 @@ def validate_report(data, app_sha, image_id=None):
         if case['passed']:
             require({'http', 'elapsedMs', 'searches', 'models', 'network', 'resources'} <= set(case)
                     and case['step'] == 'complete' and 'failure' not in case)
-        if 'code' in case: require(case['code'] in (None, 'PPT_OUTLINE_INVALID', 'PPT_MODEL_TIMEOUT'))
+        if 'code' in case: require(case['code'] in (None, 'PPT_OUTLINE_INVALID', 'PPT_MODEL_TIMEOUT', 'PPT_SKILL_UNSUPPORTED'))
         if 'research' in case: require(case['research'] == 'not-required')
         if 'network' in case: require(case['network'] == 'none')
         if 'failure' in case:

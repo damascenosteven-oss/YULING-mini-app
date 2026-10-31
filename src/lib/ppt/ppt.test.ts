@@ -425,8 +425,8 @@ test('invalid model JSON retries once and returns the explicit outline error', a
     );
     assert.equal(calls, 2);
     assert.deepEqual(failures.map(({ attempt, category, constraint }) => ({ attempt, category, constraint })), [
-      { attempt: 1, category: 'structure', constraint: '输出必须是完整、可解析的单个 JSON 对象' },
-      { attempt: 2, category: 'structure', constraint: '输出必须是完整、可解析的单个 JSON 对象' },
+      { attempt: 1, category: 'json', constraint: '输出必须是完整、可解析的单个 JSON 对象' },
+      { attempt: 2, category: 'json', constraint: '输出必须是完整、可解析的单个 JSON 对象' },
     ]);
   } finally {
     modelTransport.send = originalFetch;

@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   formatValidationIssues, generateOutline, ModelTimeoutError, OutlineInvalidError,
   type OutlineAttemptFailure,
+  type OutlineAttemptRecord,
 } from './deepseek';
 import { deckOutlineSchema, slideSchema } from './schema';
 
@@ -224,5 +225,101 @@ test('upstream HTTP errors retain status without echoing provider bodies', async
     assert.equal(failures[0].upstreamStatus, 503);
     assert.equal(failures[0].category, 'upstream');
     assert.doesNotMatch(JSON.stringify(failures), /PRIVATE_PROVIDER_BODY|FIXTURE_KEY/);
+  });
+});
+
+const highlight = {
+  id: 'table', type: 'table', variant: 'highlight-table', theme: 'blue', title: '比较', dataStatus: 'demo',
+  takeaway: '先核对口径', headers: ['项目', '数值'], rows: [{ label: '甲', values: [1] }, { label: '乙', values: [2] }],
+  highlights: [{ row: 2, column: 1, tone: 'focus' }],
+};
+
+test('highlight feedback identifies page and actual zero-based numeric-cell bounds without changing data', () => {
+  const value = structuredClone(deck);
+  Object.assign(value.slides[1], highlight);
+  const before = JSON.stringify(value);
+  const result = deckOutlineSchema.safeParse(value);
+  assert.equal(result.success, false);
+  if (result.success) return;
+  const message = formatValidationIssues(result.error, value);
+  assert.match(message, /第2页.*slides\.1\.highlights\.0\.row.*0–1/);
+  assert.match(message, /slides\.1\.highlights\.0\.column.*0–0.*标签/);
+  assert.equal(JSON.stringify(value), before);
+  assert.equal(slideSchema.safeParse({ ...highlight, highlights: [{ row: 1, column: 0, tone: 'focus' }] }).success, true);
+  for (const [row, column] of [[0, 0], [1, 0]]) {
+    assert.equal(slideSchema.safeParse({ ...highlight, highlights: [{ row, column, tone: 'focus' }] }).success, true);
+  }
+  for (const [row, column] of [[-1, 0], [0, -1], [0.5, 0], [0, 0.5], [2, 0], [0, 1]]) {
+    assert.equal(slideSchema.safeParse({ ...highlight, highlights: [{ row, column, tone: 'focus' }] }).success, false);
+  }
+});
+
+test('known Skill errors repair with exact field and draft and record each attempt once', async () => {
+  const bad = structuredClone(deck);
+  Object.assign(bad.slides[1], { ...highlight, highlights: [] });
+  const good = structuredClone(bad);
+  Object.assign(good.slides[1], { story: { question: '比较什么', claim: '需要核验', implication: '统一口径', focusKeys: ['甲'] } });
+  const failures: OutlineAttemptFailure[] = [];
+  const events: OutlineAttemptRecord[] = [];
+  await scenario([() => modelResponse(bad), () => modelResponse(good)], async requests => {
+    const result = await generateOutline(prompt, 6, 'executive-briefing', f => failures.push(f), e => events.push(e));
+    assert.equal(result.slides.length, 6);
+    assert.equal(failures[0].category, 'skill');
+    const repair = (requests[1].messages as Array<{ role: string; content: string }>).find(m => m.role === 'user')!.content;
+    assert.match(repair, /slides\.1\.story/);
+    assert.match(repair, /上次草稿/);
+    assert.deepEqual(events.map(e => [e.attempt, e.outcome, e.stage]), [[1, 'failure', 'skill'], [2, 'success', 'skill']]);
+    assert.ok(events.every(e => e.model === 'deepseek-flash' && e.usage?.totalTokens === 120));
+  });
+});
+
+test('attempt usage preserves provider counters and unknown fields without inventing or double counting', async () => {
+  const events: OutlineAttemptRecord[] = [];
+  const payload = { choices: [{ message: { content: JSON.stringify({ safe: true, deck }) }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_cache_hit_tokens: 80, prompt_cache_miss_tokens: 20,
+      completion_tokens_details: { reasoning_tokens: 5 }, private_field: 'PRIVATE_USAGE' } };
+  await scenario([() => Response.json(payload)], async () => { await generateOutline(prompt, 6, 'project-proposal', undefined, e => events.push(e)); });
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].usage, { promptTokens: 100, completionTokens: 20, totalTokens: 120, cacheHitTokens: 80, cacheMissTokens: 20, reasoningTokens: 5 });
+  assert.doesNotMatch(JSON.stringify(events), /PRIVATE_USAGE|FIXTURE_KEY|团队办公/);
+  const compatible: OutlineAttemptRecord[] = [];
+  await scenario([() => Response.json({ ...payload, usage: { prompt_tokens_details: { cached_tokens: 12 } } })], async () => {
+    await generateOutline(prompt, 6, 'project-proposal', undefined, e => compatible.push(e));
+  });
+  assert.deepEqual(compatible[0].usage, { cacheHitTokens: 12 });
+  for (const usage of [undefined, { prompt_tokens: -1, completion_tokens: '20', total_tokens: null }]) {
+    const missing: OutlineAttemptRecord[] = [];
+    await scenario([() => Response.json({ ...payload, usage })], async () => { await generateOutline(prompt, 6, 'project-proposal', undefined, e => missing.push(e)); });
+    assert.equal(missing.length, 1);
+    assert.equal(missing[0].usage, undefined);
+  }
+});
+
+test('invalid JSON has a distinct classification and never fabricates a parsed repair draft', async () => {
+  const events: OutlineAttemptRecord[] = [];
+  await scenario([() => modelResponse('PRIVATE_BROKEN_JSON'), () => modelResponse(deck)], async requests => {
+    await generateOutline(prompt, 6, 'project-proposal', undefined, e => events.push(e));
+    assert.deepEqual(events.map(e => e.outcome), ['failure', 'success']);
+    assert.equal(events[0].category, 'json');
+    assert.equal(events[0].stage, 'json');
+    const repair = (requests[1].messages as Array<{ role: string; content: string }>).find(m => m.role === 'user')!.content;
+    assert.match(repair, /完整.*JSON/);
+    assert.doesNotMatch(repair, /PRIVATE_BROKEN_JSON|上次草稿/);
+    assert.doesNotMatch(JSON.stringify(events), /PRIVATE_BROKEN_JSON/);
+  });
+});
+
+test('unknown local errors are internal and never trigger a fabricated model repair', async () => {
+  const events: OutlineAttemptRecord[] = [];
+  await scenario([() => modelResponse(deck)], async requests => {
+    const original = globalThis.structuredClone;
+    globalThis.structuredClone = () => { throw new Error('PRIVATE_INTERNAL_DETAILS'); };
+    try { await assert.rejects(() => generateOutline(prompt, 6, 'project-proposal', undefined, e => events.push(e))); }
+    finally { globalThis.structuredClone = original; }
+    assert.equal(requests.length, 1);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].category, 'internal');
+    assert.equal(events[0].stage, 'normalize');
+    assert.doesNotMatch(JSON.stringify(events), /PRIVATE_INTERNAL_DETAILS/);
   });
 });

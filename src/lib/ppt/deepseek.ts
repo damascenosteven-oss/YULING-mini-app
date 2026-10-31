@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { deckOutlineSchema, slideSchema, type DeckOutline } from './schema';
-import { resolveSkill, validateSkillDeck, type PresentationSkill } from './skills';
+import { resolveSkill, validateSkillDeck, UnsupportedSkillError, type PresentationSkill } from './skills';
 import type { PublicSkillId } from './schema';
 import {
   researchContext,
@@ -25,7 +25,7 @@ export class ModelTimeoutError extends Error {
   readonly code = 'PPT_MODEL_TIMEOUT';
 }
 class ModelStructureError extends Error {
-  constructor(message: string, readonly repairConstraint: string) {
+  constructor(message: string, readonly repairConstraint: string, readonly category: 'structure' | 'json' = 'structure') {
     super(message);
   }
 }
@@ -33,15 +33,20 @@ export { ResearchInsufficientError, ResearchUnavailableError };
 
 export type OutlineAttemptFailure = {
   attempt: number;
-  category: 'schema' | 'structure' | 'timeout' | 'upstream';
+  category: 'schema' | 'structure' | 'json' | 'skill' | 'timeout' | 'upstream' | 'internal' | 'unsafe';
   constraint: string;
   elapsedMs?: number;
   upstreamStatus?: number;
   finishReason?: string;
-  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number; reasoningTokens?: number };
+  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number; reasoningTokens?: number; cacheHitTokens?: number; cacheMissTokens?: number };
 };
 
-type AttemptContext = Pick<OutlineAttemptFailure, 'upstreamStatus' | 'finishReason' | 'usage'> & { draft?: unknown };
+type AttemptStage = 'request' | 'provider_response' | 'json' | 'envelope' | 'normalize' | 'schema' | 'skill';
+export type OutlineAttemptRecord = Pick<OutlineAttemptFailure, 'upstreamStatus' | 'finishReason' | 'usage'> & {
+  attempt: number; model: string; stage: AttemptStage; elapsedMs: number;
+  outcome: 'success' | 'failure'; category?: OutlineAttemptFailure['category'];
+};
+type AttemptContext = Pick<OutlineAttemptFailure, 'upstreamStatus' | 'finishReason' | 'usage'> & { draft?: unknown; stage: AttemptStage };
 type RepairContext = { feedback: string; draft?: unknown };
 
 export function requestsAllBusinessCharts(prompt: string): boolean {
@@ -88,10 +93,12 @@ type 与 variant 组合只能是：
 - methodology: score-model；另有 formula 和 components（2-6项 label/weight/description，权重合计100）
 - table: data-table；另有 headers（2-6列）和 rows（2-8行，每行 label/values）
 - table: highlight-table；在 data-table 基础上增加 highlights（row/column/tone=best|risk|focus）和可选 totalRow
+- highlights.row 必须为0到rows.length-1；highlights.column 必须为0到headers.length-2，对应每行values的索引，不包含label标签列。totalRow也从0开始。不确定是否高亮时可在首次生成时省略highlights，不得生成越界索引。
 - table: financial-return；只填写成本与费用，不得放入销售额、收入、订单量等收益指标。另有 currency(CNY|USD)、horizonMonths、investment（必须大于0）、items（2-6项，每项 label/baseline/proposed，proposed 必须小于或等于 baseline）。不要计算或输出 ROI 汇总，后端会确定性计算。
 以下仅演示 JSON 结构，示例数字和文案不得当作本次事实；S1 必须替换为本次证据中实际存在且支持结论的编号，没有证据就使用 demo 并省略 sourceIds。
 要点页示例：{"id":"actions","type":"bullets","variant":"three-cards","theme":"blue","title":"培训行动","items":["核实岗位要求","安排实践复盘"]}。items 必须是字符串数组，不是对象或数字；不要把要点页改成封面。
 数据表示例：{"id":"evidence-table","type":"table","variant":"data-table","theme":"blue","title":"资料对照","dataStatus":"researched","sourceIds":["S1"],"takeaway":"先核对资料口径再制定培训目标","story":{"question":"如何比较资料","claim":"比较前需要一致口径","implication":"先完成资料核验","focusKeys":["项目甲"]},"headers":["项目","数值"],"rows":[{"label":"项目甲","values":[1]},{"label":"项目乙","values":[2]}]}。headers 包含首列标签；每行 label 已是第一列，values 只包含其余列，数量必须等于 headers.length-1；不要在 values 中重复 label。
+高亮表示例：{"id":"comparison-table","type":"table","variant":"highlight-table","theme":"blue","title":"项目比较","dataStatus":"demo","takeaway":"核对数据后再作决策","headers":["项目","数值"],"rows":[{"label":"项目甲","values":[1]},{"label":"项目乙","values":[2]}],"highlights":[{"row":1,"column":0,"tone":"focus"}]}。这里高亮的是第二行的第一个数值，column是0而不是1。修复时不得直接删除错误高亮，应根据实际行列范围修正并保留其他合法内容。
 所有 kpi/chart/funnel/matrix/ranking/table/heatmap/methodology 数据页必须写 dataStatus，并必须写一句不超过36个汉字的 takeaway，直接说明管理层应从数据中看到的经营结论；可写 unit、note。没有提供检索证据时 dataStatus 必须为 "demo" 且不得伪造 source；提供检索证据时，引用证据的页面使用 "researched" 并填写 sourceIds。不要用定性词伪装成 KPI，也不要为了视觉变化制造无意义数字。
 数据研究报告和管理层经营汇报的所有数据页还必须写 story:{question,claim,implication,focusKeys}。claim 必须是数据支持的结论，不得把没有证据的推断写成事实。
 选图规则：趋势用 line，类目比较用 bar，构成用 donut，转化过程用 funnel，战略定位用 matrix，门店/区域对标用 ranking，投入产出用 financial-return。矩阵 quadrants 必须按左上、右上、左下、右下的顺序提供四个纯字符串标题。普通需求只选最相关的 2-4 类商业图表；只有用户明确要求“全部图表/展示全部商业图表”时，才在 10-12 页内让 KPI、柱或折线、环形、漏斗、矩阵、排名、数据表或财务收益七类各至少出现一次。
@@ -297,11 +304,29 @@ export function formatValidationIssues(error: z.ZodError, input?: unknown): stri
   const unique = new Map<string, string>();
   for (const issue of flattenIssues(error.issues, [], input)) {
     const path = issue.path.length ? issue.path.join('.') : 'deck';
+    const offset = issue.path[0] === 'slides' ? 2 : 0;
+    if (issue.path[offset] === 'highlights' && typeof issue.path[offset + 1] === 'number') {
+      const slide = valueAt(input, issue.path.slice(0, offset)) as { rows?: unknown[]; headers?: unknown[]; highlights?: Array<{ row?: unknown; column?: unknown }> } | undefined;
+      const highlight = slide?.highlights?.[issue.path[offset + 1] as number];
+      if (Array.isArray(slide?.rows) && Array.isArray(slide.headers) && highlight) {
+        const page = offset ? `第${Number(issue.path[1]) + 1}页 ` : '';
+        for (const [field, maximum] of [['row', slide.rows.length - 1], ['column', slide.headers.length - 2]] as const) {
+          const value = highlight[field];
+          if (!Number.isInteger(value) || Number(value) < 0 || Number(value) > maximum) {
+            const fieldPath = [...issue.path.slice(0, offset + 2), field].join('.');
+            unique.set(fieldPath, `${page}${fieldPath}：必须是0–${maximum}的整数，从0开始；column只对应values，不包含标签列`);
+          }
+        }
+        // Preserve independent tone/type errors as well as the precise range diagnostics.
+        if (issue.code === 'custom' && unique.has([...issue.path.slice(0, offset + 2), 'row'].join('.'))) continue;
+        if (issue.code === 'custom' && unique.has([...issue.path.slice(0, offset + 2), 'column'].join('.'))) continue;
+      }
+    }
     const key = `${path}:${issue.code}:${issue.message}`;
     if (!unique.has(key)) unique.set(key, `${path}：${issue.message}`);
     if (unique.size >= 8) break;
   }
-  return [...unique.values()].join('；').slice(0, 1200);
+  return [...unique.values()].slice(0, 8).join('；').slice(0, 1200);
 }
 
 async function requestOutline(prompt: string, pageCount: number, attempt: number, repair: RepairContext, research: DeckResearch, skill: PresentationSkill, selectedBy: 'auto' | 'user', context: AttemptContext, config: ModelConfig): Promise<DeckOutline> {
@@ -331,18 +356,22 @@ async function requestOutline(prompt: string, pageCount: number, attempt: number
       }, controller.signal);
     context.upstreamStatus = response.status;
     if (!response.ok) throw new Error(`DeepSeek returned HTTP ${response.status}`);
+    context.stage = 'provider_response';
     const payload: unknown = await response.json();
     if (payload && typeof payload === 'object') {
       const raw = (payload as { usage?: Record<string, unknown> }).usage;
       if (raw && typeof raw === 'object') {
         const usage: NonNullable<AttemptContext['usage']> = {};
-        for (const [source, target] of [['prompt_tokens', 'promptTokens'], ['completion_tokens', 'completionTokens'], ['total_tokens', 'totalTokens']] as const) {
+        for (const [source, target] of [['prompt_tokens', 'promptTokens'], ['completion_tokens', 'completionTokens'], ['total_tokens', 'totalTokens'], ['prompt_cache_hit_tokens', 'cacheHitTokens'], ['prompt_cache_miss_tokens', 'cacheMissTokens']] as const) {
           const value = raw[source];
-          if (typeof value === 'number' && Number.isFinite(value) && value >= 0) usage[target] = value;
+          if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) usage[target] = value;
         }
         const reasoning = raw.completion_tokens_details && typeof raw.completion_tokens_details === 'object'
           ? (raw.completion_tokens_details as Record<string, unknown>).reasoning_tokens : undefined;
-        if (typeof reasoning === 'number' && Number.isFinite(reasoning) && reasoning >= 0) usage.reasoningTokens = reasoning;
+        if (typeof reasoning === 'number' && Number.isSafeInteger(reasoning) && reasoning >= 0) usage.reasoningTokens = reasoning;
+        const cached = raw.prompt_tokens_details && typeof raw.prompt_tokens_details === 'object'
+          ? (raw.prompt_tokens_details as Record<string, unknown>).cached_tokens : undefined;
+        if (usage.cacheHitTokens === undefined && typeof cached === 'number' && Number.isSafeInteger(cached) && cached >= 0) usage.cacheHitTokens = cached;
         if (Object.keys(usage).length) context.usage = usage;
       }
     }
@@ -357,15 +386,19 @@ async function requestOutline(prompt: string, pageCount: number, attempt: number
       );
     }
     let modelJson: unknown;
+    context.stage = 'json';
     try {
       modelJson = JSON.parse(choice.message.content);
     } catch {
-      throw new ModelStructureError('DeepSeek returned invalid JSON', '输出必须是完整、可解析的单个 JSON 对象');
+      throw new ModelStructureError('DeepSeek returned invalid JSON', '输出必须是完整、可解析的单个 JSON 对象', 'json');
     }
+    context.stage = 'envelope';
     const parsed = responseEnvelopeSchema.parse(modelJson);
     if (!parsed.safe) throw new UnsafeRequestError(parsed.reason || '该需求不适合生成演示文稿');
+    context.stage = 'normalize';
     const normalized = normalizeModelDeck(parsed.deck);
     context.draft = normalized;
+    context.stage = 'schema';
     const deck = deckOutlineSchema.parse(normalized && typeof normalized === 'object' ? { ...normalized, research, skill: { id: skill.id, version: skill.version, selectedBy } } : normalized);
     if (deck.slides.length !== pageCount) {
       throw new ModelStructureError(
@@ -379,6 +412,7 @@ async function requestOutline(prompt: string, pageCount: number, attempt: number
         'slides：12 页必须覆盖 KPI、柱状或折线、环形、漏斗、矩阵、排名、数据表和财务收益页',
       );
     }
+    context.stage = 'skill';
     return validateSkillDeck(deck);
   } finally {
     clearTimeout(timeout);
@@ -390,6 +424,7 @@ export async function generateOutline(
   pageCount: number,
   requestedSkill: 'auto' | PublicSkillId = 'auto',
   onAttemptFailure?: (failure: OutlineAttemptFailure) => void,
+  onAttempt?: (record: OutlineAttemptRecord) => void,
 ): Promise<DeckOutline> {
   const research: DeckResearch = { status: 'not-required' };
   const { config } = await modelSettingsStore().read();
@@ -399,29 +434,45 @@ export async function generateOutline(
   let lastError: unknown;
   let repair: RepairContext = { feedback: '' };
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const context: AttemptContext = {};
+    const context: AttemptContext = { stage: 'request' };
     const started = performance.now();
+    let outcome: OutlineAttemptRecord['outcome'] = 'failure';
+    let category: OutlineAttemptFailure['category'] | undefined;
     try {
-      return await requestOutline(prompt, pageCount, attempt, repair, research, skill, selectedBy, context, config);
+      const result = await requestOutline(prompt, pageCount, attempt, repair, research, skill, selectedBy, context, config);
+      outcome = 'success';
+      return result;
     } catch (error) {
-      if (error instanceof UnsafeRequestError) throw error;
+      if (error instanceof UnsafeRequestError) { category = 'unsafe'; throw error; }
       let failure: OutlineAttemptFailure;
       if (error instanceof z.ZodError) {
         repair = { feedback: formatValidationIssues(error, context.draft), draft: context.draft };
         failure = { attempt: attempt + 1, category: 'schema', constraint: repair.feedback };
       } else if (error instanceof ModelStructureError) {
         repair = { feedback: error.repairConstraint, draft: context.draft };
-        failure = { attempt: attempt + 1, category: 'structure', constraint: repair.feedback };
+        failure = { attempt: attempt + 1, category: error.category, constraint: repair.feedback };
+      } else if (error instanceof UnsupportedSkillError && error.repairConstraint) {
+        repair = { feedback: error.repairConstraint, draft: context.draft };
+        failure = { attempt: attempt + 1, category: 'skill', constraint: repair.feedback };
       } else if (error instanceof Error && error.name === 'AbortError') {
         failure = { attempt: attempt + 1, category: 'timeout', constraint: '模型请求超时' };
+      } else if (context.stage === 'request' || context.stage === 'provider_response') {
+        failure = { attempt: attempt + 1, category: 'upstream', constraint: '模型服务请求或响应失败' };
       } else {
-        failure = { attempt: attempt + 1, category: 'upstream', constraint: error instanceof Error ? error.name : 'UnknownError' };
+        category = 'internal';
+        // A local programming/configuration exception is not a model repair instruction.
+        throw error;
       }
+      category = failure.category;
       onAttemptFailure?.({
         ...failure, elapsedMs: Math.max(0, Math.round(performance.now() - started)),
         upstreamStatus: context.upstreamStatus, finishReason: context.finishReason, usage: context.usage,
       });
       lastError = error instanceof z.ZodError ? new OutlineInvalidError(repair.feedback) : error;
+    } finally {
+      onAttempt?.({ attempt: attempt + 1, model: config.model, stage: context.stage, outcome, category,
+        elapsedMs: Math.max(0, Math.round(performance.now() - started)), upstreamStatus: context.upstreamStatus,
+        finishReason: context.finishReason, usage: context.usage });
     }
   }
   if (lastError instanceof z.ZodError) throw new OutlineInvalidError(formatValidationIssues(lastError));

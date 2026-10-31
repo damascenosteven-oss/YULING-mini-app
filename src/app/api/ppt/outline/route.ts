@@ -30,8 +30,9 @@ export async function POST(request: NextRequest) {
   const device = deviceIdentity(request);
   try {
     const deck = await generateOutline(parsed.data.prompt, parsed.data.pageCount, parsed.data.skillId, failure => {
-      console.error('ppt_outline_attempt_failed', { requestId, ...failure });
-    });
+      const { usage: _usage, ...diagnostic } = failure;
+      console.error('ppt_outline_attempt_failed', { requestId, ...diagnostic });
+    }, record => console.info('ppt_outline_attempt', JSON.stringify({ requestId, ...record })));
     let recent: MotionHistory[] = [];
     try {
       const history = await listDeckHistory(device.ownerHash);
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
       console.error('ppt_outline_invalid', { requestId, code: error.code, constraint: error.message.slice(0, 1200) });
       return NextResponse.json({ error: `大纲结构未能自动修复，请重试（${requestId.slice(0, 8)}）`, code: error.code }, { status: 502 });
     }
-    console.error('ppt_outline_failed', { requestId, error: error instanceof Error ? error.name : 'UnknownError' });
+    console.error('ppt_outline_failed', { requestId, step: 'outline_generate', classification: 'generation_failed' });
     return NextResponse.json({ error: `大纲生成失败，请重试（${requestId.slice(0, 8)}）` }, { status: 502 });
   }
 }

@@ -38,6 +38,14 @@ if (scenario === 'admin') deck.slides[7] = {
  entries: ['数字工具应用', '设备运维基础', '数据分析入门', '质量管理实务', '客户沟通技巧', '外贸英语'].map((label, i) => ({ label, value: [92, 85, 78, 64, 58, 45][i], change: 0 })),
 };
 function stats() { console.error('OUTLINE_FIXTURE ' + JSON.stringify({ scenario, searches: 0, models, connections })); }
+const highlightPage = {
+ id: 'highlight-bounds', type: 'table', variant: 'highlight-table', theme: 'blue', title: '项目比较',
+ dataStatus: 'demo', takeaway: '先核对实际口径', headers: ['项目', '数值'],
+ rows: [{ label: '项目甲', values: [1] }, { label: '项目乙', values: [2] }],
+ highlights: [{ row: 1, column: 0, tone: 'focus' }],
+ story: { question: '如何比较', claim: '先核验口径', implication: '复核后再决策', focusKeys: ['项目甲'] },
+ subtitle: marker,
+};
 globalThis.fetch = async (input, init) => {
  const url = String(input instanceof Request ? input.url : input);
  assert.ok(url.startsWith('http://127.0.0.1:') || url.startsWith('http://localhost:'), 'no external fetch');
@@ -83,11 +91,25 @@ https.request = function (input, options, callback) {
    const repair = body.messages.find(m => m.role === 'user').content;
    assert.ok(repair.includes(marker) && repair.includes('slides.1.items')); assert.ok(!repair.includes('slides.1.tagline'));
   }
+  if (models === 2 && ['highlight-repair', 'skill-repair', 'skill-invalid', 'json-repair'].includes(scenario)) {
+   const repair = body.messages.find(m => m.role === 'user').content;
+   if (scenario === 'json-repair') { assert.ok(repair.includes('完整、可解析')); assert.ok(!repair.includes('上次草稿')); }
+   else {
+    assert.ok(repair.includes(marker) && repair.includes('上次草稿'));
+    if (scenario === 'highlight-repair') assert.ok(repair.includes('第8页') && repair.includes('slides.7.highlights.0.row') && repair.includes('0–1') && repair.includes('0–0'));
+    else assert.ok(repair.includes('slides.7.story') && repair.includes('focusKeys'));
+   }
+  }
   if (scenario === 'timeout' && models === 2) { options.signal.addEventListener('abort', () => request.destroy(new DOMException('fixture timeout', 'AbortError')), { once: true }); return; }
   if (scenario === 'upstream') { respond(503, 'PRIVATE_PROVIDER_BODY_SENTINEL'); return; }
   const result = structuredClone(deck);
+  if (['highlight-repair', 'skill-repair', 'skill-invalid'].includes(scenario)) {
+   result.slides[7] = structuredClone(highlightPage);
+   if (scenario === 'highlight-repair' && models === 1) result.slides[7].highlights = [{ row: 2, column: 1, tone: 'focus' }];
+   if (scenario === 'skill-invalid' || scenario === 'skill-repair' && models === 1) delete result.slides[7].story;
+  }
   if (scenario === 'invalid' || (['repair', 'timeout', 'admin'].includes(scenario) && models === 1)) { result.slides[1].items = [1, 2, 3, 4, 5]; result.slides[1].subtitle = marker; }
-  respond(200, JSON.stringify({ choices: [{ finish_reason: scenario === 'truncated' ? 'length' : 'stop', message: { content: scenario === 'json' ? '{broken-json' : JSON.stringify({ safe: true, deck: result }) } }], usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 } }), { 'content-type': 'application/json' });
+  respond(200, JSON.stringify({ choices: [{ finish_reason: scenario === 'truncated' ? 'length' : 'stop', message: { content: scenario === 'json' || scenario === 'json-repair' && models === 1 ? '{broken-json' : JSON.stringify({ safe: true, deck: result }) } }], usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, prompt_cache_hit_tokens: 80, prompt_cache_miss_tokens: 20, completion_tokens_details: { reasoning_tokens: 5 } } }), { 'content-type': 'application/json' });
  });
  return request;
 };
