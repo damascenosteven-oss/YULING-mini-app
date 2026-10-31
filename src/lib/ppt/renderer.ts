@@ -152,9 +152,11 @@ function ranking(slide: Extract<Slide, { type: 'ranking' }>, index: number): str
     const groups = slide.groups.map((group, groupIndex) => `<article class="ai-ranking-group" data-a="rise" style="--d:${groupIndex + 1}"><h3>${escapeHtml(group.title)}</h3>${group.entries.slice().sort((a, b) => b.value - a.value).map((entry, entryIndex) => `<div><b>${entryIndex + 1}</b><span>${escapeHtml(entry.label)}</span><i style="--w:${Math.max(8, Math.min(100, Math.abs(entry.value)))}%"></i><strong>${displayNumber(entry.value)}${escapeHtml(slide.unit || '')}</strong></div>`).join('')}</article>`).join('');
     return dataFrame(slide, index, `<div class="ai-ranking-groups">${groups}</div>`);
   }
+  // Descriptive units already appear in provenance; repeating them squeezes labels.
+  const inlineUnit = (slide.unit?.length ?? 0) <= 2 ? slide.unit : '';
   const sorted = [...slide.entries].sort((left, right) => right.value - left.value);
-  const podium = sorted.slice(0, 3).map((entry, entryIndex) => `<article class="ai-podium-card rank-${entryIndex + 1}" data-a="rise" style="--d:${entryIndex + 1}"><span>TOP ${entryIndex + 1}</span><strong>${escapeHtml(entry.label)}</strong><b>${displayNumber(entry.value)}${escapeHtml(slide.unit || '')}</b>${entry.change === undefined ? '' : `<small class="${entry.change < 0 ? 'down' : 'up'}">${entry.change >= 0 ? '↑' : '↓'} ${displayNumber(Math.abs(entry.change))}</small>`}</article>`).join('');
-  return dataFrame(slide, index, `<div class="ai-ranking-layout"><div class="ai-podium">${podium}</div><div class="ai-chart-glass">${chartFigure('ranking', { entries: slide.entries, unit: slide.unit }, 'ai-primary-chart')}</div></div>`);
+  const podium = sorted.slice(0, 3).map((entry, entryIndex) => `<article class="ai-podium-card rank-${entryIndex + 1}" data-a="rise" style="--d:${entryIndex + 1}"><span>TOP ${entryIndex + 1}</span><strong>${escapeHtml(entry.label)}</strong><b>${displayNumber(entry.value)}${escapeHtml(inlineUnit || '')}</b>${entry.change === undefined ? '' : `<small class="${entry.change < 0 ? 'down' : 'up'}">${entry.change >= 0 ? '↑' : '↓'} ${displayNumber(Math.abs(entry.change))}</small>`}</article>`).join('');
+  return dataFrame(slide, index, `<div class="ai-ranking-layout"><div class="ai-podium">${podium}</div><div class="ai-chart-glass">${chartFigure('ranking', { entries: slide.entries, unit: inlineUnit }, 'ai-primary-chart')}</div></div>`);
 }
 
 function dataTable(slide: Extract<Slide, { type: 'table'; variant: 'data-table' }>, index: number): string {

@@ -123,6 +123,12 @@
         "approval_source": "Owner explicitly approved implementation of the complete repair, owner-reviewed merge, direct computer deployment and real PPT acceptance plan in this Codex conversation on 2026-10-31. Issue branch code/tests/push/PR authorized. Owner alone merges; server operations only after reviewed merge and approved preconditions; paid model calls limited to three. Owner additionally explicitly approved the minimal ESLint minimatch compatibility patch with regression coverage in the same PR on 2026-10-31; no disabled checks or broad toolchain upgrade.",
         "plan": "docs/plans/issue-36-minimatch-audit.md",
         "plan_sha256": "4c99e010abdcb78aba122e3ce634a3eb17f827eac0bccacf5b49714a966aa0ba"
+      },
+      "38": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/38",
+        "approval_source": "Owner-approved end-to-end repair/deploy/real-PPT acceptance plan explicitly authorizes fixing in-scope failures in this round through Issue/worktree/tests/push/PR and owner merge; owner confirmed PR37 merge and continued deployment on 2026-10-31. Actual ranking-layout failure triggers this scoped renderer/QA repair; no auto merge, new model calls, budget increase or unchecked deployment.",
+        "plan": "docs/plans/issue-38-ranking-text-fit.md",
+        "plan_sha256": "d3c55d1b7b9e0b9f07d82058d4d6bc2f0a5b8840fd2aac520626d32dafba6dcf"
       }
     }
   }

@@ -28,6 +28,15 @@ const deck = {
   { id: 'closing', type: 'closing', variant: 'action-card', theme: 'blue', title: '下一步', summary: '内容仍需人工核验', actions: ['人工复核并试用'] },
  ],
 };
+// The real acceptance failure used a descriptive unit on a ranking page.
+// Exercise the same renderer -> Python -> QA -> COS path without cloud calls.
+if (scenario === 'admin') deck.slides[7] = {
+ id: 'ranking-unit-fit', type: 'ranking', variant: 'horizontal-bars', theme: 'blue',
+ title: '课程需求热度排名', dataStatus: 'demo', unit: '报名指数（演示）',
+ takeaway: '数字工具与设备运维课程需求领先',
+ story: { question: '如何安排课程？', claim: '数字工具与设备运维课程需求领先', implication: '仅为演示，实际需核验', focusKeys: ['数字工具应用'] },
+ entries: ['数字工具应用', '设备运维基础', '数据分析入门', '质量管理实务', '客户沟通技巧', '外贸英语'].map((label, i) => ({ label, value: [92, 85, 78, 64, 58, 45][i], change: 0 })),
+};
 function stats() { console.error('OUTLINE_FIXTURE ' + JSON.stringify({ scenario, searches: 0, models, connections })); }
 globalThis.fetch = async (input, init) => {
  const url = String(input instanceof Request ? input.url : input);

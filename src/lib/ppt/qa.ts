@@ -174,6 +174,18 @@ async function inspect(html: Buffer): Promise<{ pages: number; issues: DeckQaIss
             || textRect.top < nodeRect.top - tolerance
             || textRect.bottom > nodeRect.bottom + tolerance;
         });
+        const rankingTextOverflow = Array.from(slide.querySelectorAll<HTMLElement>('.ai-podium-card')).some(card => {
+          const cardRect = card.getBoundingClientRect();
+          return Array.from(card.querySelectorAll<HTMLElement>('span,strong,b,small')).some(text => {
+            const rect = text.getBoundingClientRect();
+            const fontSize = Number.parseFloat(getComputedStyle(text).fontSize);
+            const squeezedTitle = text.tagName === 'STRONG' && (text.textContent || '').trim().length > 2
+              && rect.width < fontSize * 2 - tolerance;
+            return squeezedTitle || text.scrollWidth > text.clientWidth + tolerance
+              || rect.left < cardRect.left - tolerance || rect.right > cardRect.right + tolerance
+              || rect.top < cardRect.top - tolerance || rect.bottom > cardRect.bottom + tolerance;
+          });
+        });
         const heading = slide.querySelector<HTMLElement>('h1,h2');
         const headingStyle = heading ? getComputedStyle(heading) : null;
         const lineHeight = headingStyle ? Number.parseFloat(headingStyle.lineHeight) : 0;
@@ -184,6 +196,12 @@ async function inspect(html: Buffer): Promise<{ pages: number; issues: DeckQaIss
           const type = chart.dataset.chart;
           const drawn = type === 'kpi' ? chart.querySelector('.kpi-value') : chart.querySelector('svg');
           const svg = drawn instanceof SVGSVGElement ? drawn : null;
+          const rankingTextClipped = type === 'ranking' && svg && Array.from(svg.querySelectorAll('text')).some(text => {
+            const textRect = text.getBoundingClientRect();
+            const svgRect = svg.getBoundingClientRect();
+            return textRect.left < svgRect.left - tolerance || textRect.right > svgRect.right + tolerance
+              || textRect.top < svgRect.top - tolerance || textRect.bottom > svgRect.bottom + tolerance;
+          });
           const content = chart.textContent || '';
           const typeNeedsCategoryColours = type === 'bar' || type === 'donut' || type === 'funnel' || type === 'matrix' || type === 'ranking' || type === 'scatter' || type === 'radar' || type === 'stacked-bar' || type === 'heatmap';
           const colourNodes = typeNeedsCategoryColours
@@ -220,7 +238,7 @@ async function inspect(html: Buffer): Promise<{ pages: number; issues: DeckQaIss
           const semanticNodesMissing = Boolean(type && requiredSelector[type] && !chart.querySelector(requiredSelector[type]));
           const colourInvalid = expectedColours > 1 && colours.size < expectedColours;
           const zeroCanvas = svg ? svg.viewBox.baseVal.width < 80 || svg.viewBox.baseVal.height < 80 : false;
-          return rect.width < 120 || rect.height < 100 || !drawn || /NaN|Infinity/.test(content) || (drawn instanceof SVGElement && drawn.getBoundingClientRect().width < 80) || zeroCanvas || colourInvalid || semanticNodesMissing;
+          return rect.width < 120 || rect.height < 100 || !drawn || /NaN|Infinity/.test(content) || (drawn instanceof SVGElement && drawn.getBoundingClientRect().width < 80) || zeroCanvas || colourInvalid || semanticNodesMissing || rankingTextClipped;
         });
         const tables = Array.from(slide.querySelectorAll<HTMLTableElement>('table.tbl'));
         const tableInvalid = tables.some(table => table.rows.length < 2 || table.getBoundingClientRect().width < 180 || table.scrollWidth > table.clientWidth + 3);
@@ -228,7 +246,7 @@ async function inspect(html: Buffer): Promise<{ pages: number; issues: DeckQaIss
         return {
           blank: style.visibility !== 'visible' || Number(style.opacity) < 0.95 || visibleText.length < 8 || !bodyRect || bodyRect.width < 40 * scale || bodyRect.height < 20 * scale,
           navigation: active.length !== 1 || active[0] !== slide || slide.classList.contains('leaving'),
-          overflow: overflowNodes.length > 0 || diagramTextOverflow,
+          overflow: overflowNodes.length > 0 || diagramTextOverflow || rankingTextOverflow,
           titleWrap: headingLines > 2.35,
           chart: chartInvalid || tableInvalid || problems.some(problem => problem.page === pageIndex + 1),
         };
