@@ -65,6 +65,9 @@ def main():
     def source(_state, _sha, checkout):
         target = checkout / 'deploy/test'
         target.mkdir(parents=True)
+        runtime = checkout / 'src/lib/ppt/mobile-playback-lifecycle.ts'
+        runtime.parent.mkdir(parents=True)
+        shutil.copyfile(HERE.parents[1] / 'src/lib/ppt/mobile-playback-lifecycle.ts', runtime)
         for file in HERE.glob('*'):
             if file.is_file():
                 shutil.copyfile(file, target / file.name)

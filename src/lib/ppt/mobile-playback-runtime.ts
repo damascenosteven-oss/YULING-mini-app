@@ -1,4 +1,5 @@
-// Application-owned compatibility code, injected before the verified engine boot.
+// Frozen v1 bytes validate already saved works during migration to lifecycle v2.
+// New output uses mobile-playback-lifecycle.ts.
 // It shares the classic script scope; the pinned engine itself is not copied here.
 export const mobilePlaybackRuntime = String.raw`
 (() => {

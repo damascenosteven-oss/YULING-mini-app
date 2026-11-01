@@ -110,7 +110,7 @@ class GuardEntries(unittest.TestCase):
         policy = json.loads(POLICY.read_text(encoding="utf-8"))
         self.assertEqual(hashlib.sha256(CHECKER.read_bytes()).hexdigest(), policy["checker_sha256"])
         self.assertEqual(policy["lifecycle"]["effective_at"], "2026-10-22T04:50:03.733426+00:00")
-        self.assertEqual(set(policy["lifecycle"]["issues"]), {"8", "9", "12", "14", "16", "18", "20", "22", "24", "26", "28", "30", "32", "34", "36", "38", "40", "42", "44"})
+        self.assertEqual(set(policy["lifecycle"]["issues"]), {"8", "9", "12", "14", "16", "18", "20", "22", "24", "26", "28", "30", "32", "34", "36", "38", "40", "42", "44", "46"})
         self.assertEqual(policy["lifecycle"]["grandfathered"], {})
 
     def test_accepted_stage_commit_and_push_entry_pass(self):

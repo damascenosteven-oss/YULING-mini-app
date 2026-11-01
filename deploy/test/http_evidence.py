@@ -93,10 +93,15 @@ def failure(error, step):
         try:
             require(isinstance(error.stdout, str) and len(error.stdout.encode()) <= LIMIT)
             data = json.loads(error.stdout)
-            require(set(data) == {'fixture_failure', 'step', 'kind', 'http', 'elapsedMs'})
+            fields = {'fixture_failure', 'step', 'kind', 'http', 'elapsedMs'}
+            require(set(data) in (fields, fields | {'playbackLine'}))
             require(data['fixture_failure'] is True and data['step'] in STEPS and data['kind'] in KINDS)
             integer(data['elapsedMs'])
             require(data['http'] is None or type(data['http']) is int and 100 <= data['http'] <= 599)
+            if 'playbackLine' in data:
+                require(data['step'] == 'mobile_playback' and type(data['playbackLine']) is int
+                        and 1 <= data['playbackLine'] <= 9999)
+                detail['failure']['playback_line'] = data['playbackLine']
             detail.update(step=data['step'], elapsedMs=data['elapsedMs'])
             if data['http'] is not None:
                 detail['http'] = data['http']
@@ -136,7 +141,11 @@ def validate_report(data, app_sha, image_id=None):
         if 'network' in case: require(case['network'] == 'none')
         if 'failure' in case:
             f = case['failure']
-            require(isinstance(f, dict) and set(f) == {'kind', 'exit_code'} and f['kind'] in KINDS)
+            require(isinstance(f, dict) and set(f) in ({'kind', 'exit_code'}, {'kind', 'exit_code', 'playback_line'})
+                    and f['kind'] in KINDS)
+            if 'playback_line' in f:
+                require(not case['passed'] and case['case'] == 'admin' and case['step'] == 'mobile_playback'
+                        and type(f['playback_line']) is int and 1 <= f['playback_line'] <= 9999)
             require(f['exit_code'] is None or type(f['exit_code']) is int and -255 <= f['exit_code'] <= 255)
         for resource_key in ('resources', 'recreate_resources'):
             if resource_key not in case: continue
