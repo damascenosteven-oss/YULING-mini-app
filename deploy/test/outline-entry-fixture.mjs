@@ -82,11 +82,11 @@ https.request = function (input, options, callback) {
      // Simulate an existing COS work: the writer must adapt new output, while
      // the real GET route must adapt the unmodified pinned engine runtime too.
      const html = raw.toString();
-     assert.equal(html.split('<!-- yuling-mobile-playback:v2 -->').length, 2);
-     let old = html.replace(/<style data-yuling-mobile="v2">[\s\S]*?<\/style>/, '')
-      .replace(/<!-- yuling-mobile-playback:v2 -->[\s\S]*?(?=splitHeadingLines\(\);)/, '');
+     assert.equal(html.split('<!-- yuling-mobile-playback:v3 -->').length, 2);
+     let old = html.replace(/<style data-yuling-mobile="v3">[\s\S]*?<\/style>/, '')
+      .replace(/<!-- yuling-mobile-playback:v3 -->[\s\S]*?(?=splitHeadingLines\(\);)/, '');
      for(const [original, changed] of playbackFixtureRewrites) old=old.split(changed).join(original);
-     assert.equal(old.includes('yuling-mobile-playback:v2'), false);
+     assert.equal(old.includes('yuling-mobile-playback:v3'), false);
      data = Buffer.from(old);
     }
     objects.set(key, { data, headers: { ...options.headers, 'content-length': String(data.length) } });

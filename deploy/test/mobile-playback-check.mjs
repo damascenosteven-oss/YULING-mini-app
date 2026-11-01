@@ -1,5 +1,100 @@
 import assert from 'node:assert/strict';
-/* global window, document, HTMLCanvasElement, getComputedStyle, requestAnimationFrame, show, openMap, closeMap, slides, current, hasHiddenStep, advance, toggleAutoplay, autoplayTimer, PageTransitionEvent, countUp, typewrite */
+/* global window, document, HTMLCanvasElement, getComputedStyle, matchMedia, requestAnimationFrame, show, openMap, closeMap, slides, current, hasHiddenStep, advance, toggleAutoplay, autoplayTimer, PageTransitionEvent, countUp, typewrite */
+
+// Global backgrounds sit outside .slide, so hidden-page checks do not cover them.
+export async function checkInvisibleGlobals(frame) {
+  const indices = await frame.evaluate(() => ({ chapter: slides.findIndex(s => s.classList.contains('chapter')),
+    ordinary: slides.findIndex(s => !s.classList.contains('chapter')) }));
+  assert.ok(indices.chapter >= 0 && indices.ordinary >= 0);
+  for (const [index, hidden, visible] of [[indices.chapter, 'backdrop', 'nightsky'], [indices.ordinary, 'nightsky', 'backdrop']]) {
+    await frame.evaluate(i => show(i, true), index);
+    await frame.waitForFunction(id => getComputedStyle(document.getElementById(id)).opacity === '0', hidden);
+    try {
+      await frame.waitForFunction(id => getComputedStyle(document.getElementById(id)).display === 'none', hidden, { timeout: 2500 });
+    } catch {
+      assert.fail('fully transparent background must exit drawing');
+    }
+    assert.equal(await frame.evaluate(id => document.getElementById(id).getAnimations({ subtree: true }).length, hidden), 0);
+    assert.notEqual(await frame.evaluate(id => getComputedStyle(document.getElementById(id)).display, visible), 'none', 'visible original background must remain');
+  }
+  const sweep = await frame.evaluate(({ ordinary, chapter }) => {
+    show(ordinary, true); show(chapter, true);
+    const wipe = document.getElementById('wipe');
+    return { visible: getComputedStyle(wipe).display !== 'none',
+      running: wipe.getAnimations().some(a => a.animationName === 'wipe' && a.playState === 'running'),
+      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  }, indices);
+  if (!sweep.reduced) assert.ok(sweep.visible && sweep.running, 'original chapter sweep must play before release');
+  try {
+    await frame.waitForFunction(() => getComputedStyle(document.getElementById('wipe')).display === 'none', null, { timeout: 3500 });
+  } catch {
+    assert.fail('finished offscreen sweep must exit drawing');
+  }
+  await frame.evaluate(({ ordinary, chapter }) => {
+    for (let i = 0; i < 6; i++) show(i % 2 ? chapter : ordinary, true);
+    show(chapter, true);
+  }, indices);
+  await frame.waitForFunction(() => getComputedStyle(document.getElementById('nightsky')).opacity === '1');
+  assert.notEqual(await frame.evaluate(() => getComputedStyle(document.getElementById('nightsky')).display), 'none', 'stale release must not hide the current background');
+  if (!sweep.reduced) {
+    // Read both ends of the switch in the same browser task. Separate protocol
+    // round trips can include hundreds of ms of real animation on dense WebKit.
+    const { before, ordinaryStart } = await frame.evaluate(i => {
+      const previous = document.getElementById('nightsky').getAnimations({ subtree: true }).find(a => a.animationName === 'aurora');
+      if (!previous) throw Error('visible original background must remain');
+      const before = Number(previous.currentTime);
+      show(i, true);
+      const next = document.getElementById('backdrop').getAnimations({ subtree: true }).find(a => a.animationName === 'aurora');
+      if (!next) throw Error('visible original background must remain');
+      return { before, ordinaryStart: Number(next.currentTime) };
+    }, indices.ordinary);
+    await frame.waitForFunction(() => document.body.classList.contains('is-settled'), null, { timeout: 11000 });
+    const ordinaryEnd = await frame.evaluate(() => {
+      const animation = document.getElementById('backdrop').getAnimations({ subtree: true }).find(a => a.animationName === 'aurora');
+      if (!animation) throw Error('visible original background must remain');
+      return Number(animation.currentTime);
+    });
+    const restored = await frame.evaluate(i => {
+      show(i, true);
+      const animation = document.getElementById('nightsky').getAnimations({ subtree: true }).find(a => a.animationName === 'aurora');
+      if (!animation) throw Error('visible original background must remain');
+      return Number(animation.currentTime);
+    }, indices.chapter);
+    assert.ok(Math.abs(restored - before - (ordinaryEnd - ordinaryStart)) < 100,
+      `background must preserve its original phase: ${before}, ${ordinaryStart}, ${ordinaryEnd}, ${restored}`);
+  }
+}
+
+// Check the real task clock across a suspension longer than the animation.
+export async function checkCounterPause(frame) {
+  await frame.evaluate(() => {
+    const count = document.createElement('span');
+    count.id = 'test-count'; count.dataset.count = '1000'; count.textContent = '0';
+    const type = document.createElement('span');
+    type.id = 'test-type'; type.dataset.type = 'The original typing animation must resume from its current position.';
+    slides[current].append(count, type);
+    countUp(slides[current]); typewrite(slides[current]);
+  });
+  await frame.page().waitForTimeout(850);
+  const progress = await frame.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide'));
+    return { count: document.getElementById('test-count').textContent, type: document.getElementById('test-type').textContent };
+  });
+  // Longer than the original 1600ms counter: missing pause compensation must
+  // reach 1000 and fail. Sample actual frames rather than a fixed 100ms sleep.
+  await frame.page().waitForTimeout(2000);
+  assert.deepEqual(await frame.evaluate(() => ({
+    count: document.getElementById('test-count').textContent, type: document.getElementById('test-type').textContent,
+  })), progress, 'background must pause original count and typing progress');
+  await frame.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow')));
+  await frame.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const resumed = await frame.evaluate(() => ({
+    count: Number(document.getElementById('test-count').textContent), type: document.getElementById('test-type').textContent,
+  }));
+  assert.ok(resumed.count > Number(progress.count) && resumed.count < 1000, 'original counter resumes without jumping to its end');
+  assert.ok(resumed.type.length >= progress.type.length && resumed.type.length < 60);
+  await frame.evaluate(() => { document.getElementById('test-count').remove(); document.getElementById('test-type').remove(); });
+}
 
 // Browser-level gestures can navigate the parent instead of firing deck controls.
 async function checkSwipes(context, page, frame) {
@@ -28,8 +123,8 @@ async function checkSwipes(context, page, frame) {
 }
 
 // Shared by the synthetic browser regression and the actual HTTP image entry.
-export async function checkMobilePlayback(browser, url, reducedMotion = 'no-preference', requireSteps = true) {
-  const context = await browser.newContext({ viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true, reducedMotion });
+export async function checkMobilePlayback(browser, url, reducedMotion = 'no-preference', requireSteps = true, deviceScaleFactor = 3) {
+  const context = await browser.newContext({ viewport: { width: 430, height: 932 }, deviceScaleFactor, hasTouch: true, isMobile: true, reducedMotion });
   await context.addInitScript(() => {
     const counters = { listeners: 0, particles: 0, particleFrames: 0, frames: 0, pendingFrames: 0, observers: 0 };
     window.__playbackTest = counters;
@@ -78,7 +173,7 @@ export async function checkMobilePlayback(browser, url, reducedMotion = 'no-pref
     await page.goto(url);
     const frame = await (await page.waitForSelector('iframe')).contentFrame();
     assert.ok(frame);
-    await frame.waitForSelector('body[data-yuling-playback="lifecycle-v2"].yuling-playback-ready');
+    await frame.waitForSelector('body[data-yuling-playback="lifecycle-v3"].yuling-playback-ready');
     const count = await frame.locator('#stage > .slide').count();
     assert.ok(count >= 6);
     async function sample() {
@@ -196,7 +291,7 @@ export async function checkMobilePlayback(browser, url, reducedMotion = 'no-pref
     await stable();
     for (let i = 0; i < 5; i++) {
       await page.setViewportSize(i % 2 ? { width: 430, height: 932 } : { width: 932, height: 430 });
-      assert.equal(await frame.locator('body').getAttribute('data-yuling-playback'), 'lifecycle-v2');
+      assert.equal(await frame.locator('body').getAttribute('data-yuling-playback'), 'lifecycle-v3');
     }
     await frame.evaluate(() => {
       show(0, true); toggleAutoplay();
@@ -211,31 +306,8 @@ export async function checkMobilePlayback(browser, url, reducedMotion = 'no-pref
     assert.equal(await frame.evaluate(() => current), 1);
     await frame.evaluate(() => toggleAutoplay());
     await stable();
-    await frame.evaluate(() => {
-      const count = document.createElement('span');
-      count.id = 'test-count'; count.dataset.count = '1000'; count.textContent = '0';
-      const type = document.createElement('span');
-      type.id = 'test-type'; type.dataset.type = 'The original typing animation must resume from its current position.';
-      slides[current].append(count, type);
-      countUp(slides[current]); typewrite(slides[current]);
-    });
-    await page.waitForTimeout(850);
-    const progress = await frame.evaluate(() => {
-      window.dispatchEvent(new PageTransitionEvent('pagehide'));
-      return { count: document.getElementById('test-count').textContent, type: document.getElementById('test-type').textContent };
-    });
-    await page.waitForTimeout(400);
-    assert.deepEqual(await frame.evaluate(() => ({
-      count: document.getElementById('test-count').textContent, type: document.getElementById('test-type').textContent,
-    })), progress, 'background must pause original count and typing progress');
-    await frame.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow')));
-    await page.waitForTimeout(100);
-    const resumed = await frame.evaluate(() => ({
-      count: Number(document.getElementById('test-count').textContent), type: document.getElementById('test-type').textContent,
-    }));
-    assert.ok(resumed.count > Number(progress.count) && resumed.count < 1000, 'original counter resumes without jumping to its end');
-    assert.ok(resumed.type.length >= progress.type.length && resumed.type.length < 60);
-    await frame.evaluate(() => { document.getElementById('test-count').remove(); document.getElementById('test-type').remove(); });
+    await checkCounterPause(frame);
+    await checkInvisibleGlobals(frame);
     const chapter = await frame.evaluate(() => slides.findIndex(s => s.classList.contains('chapter')));
     assert.ok(chapter >= 0, 'fixture must exercise the original particle scene');
     await frame.evaluate(i => show(i, true), chapter);

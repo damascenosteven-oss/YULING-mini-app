@@ -157,6 +157,12 @@
         "approval_source": "Owner explicitly approved implementation of the full original-visual playback resource lifecycle plan on 2026-11-01, superseding the lightweight visuals. Reuse Issue 46 and open PR 47; owner alone merges. Post-merge verified direct deployment and physical owner iPhone acceptance. Only the separately authorized unreferenced 0dd932a server image may be removed if needed.",
         "adr": "docs/adr/0016-playback-resource-lifecycle.md",
         "adr_sha256": "79258b525561e8f68445c33b2a5c28d878a4dce3bbc7c02d40c3c5b3b5023ffe"
+      },
+      "48": {
+        "url": "https://github.com/damascenosteven-oss/YULING-mini-app/issues/48",
+        "plan": "docs/plans/issue-48-global-playback.md",
+        "plan_sha256": "00bcbe9082fcfe4705826563ec53d904d84705bbf764895c354f4ae2aafddb1d",
+        "approval_source": "Continuation of the owner-approved original-visual playback resource lifecycle plan on 2026-11-01 after PR47 merge/deployment and reported iPhone last-page failure. This follow-up only releases verified invisible global resources and preserves visual/time semantics and strict old-work compatibility. Issue worktree code/tests, Issue-branch push and review PR remain within that approved scope; owner alone merges. No new visual tradeoff, server operation, paid call or unrelated cleanup in this code phase."
       }
     }
   }
