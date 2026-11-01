@@ -58,7 +58,7 @@ const playbackTasks = (() => {
     set particleDraw(callback) { particleDraw = callback; },
   };
   if (!mobile) return api;
-  body.dataset.yulingPlayback = 'lifecycle-v2';
+  body.dataset.yulingPlayback = 'lifecycle-v3';
   let exit = null;
   let exitTimer = null;
   let generation = 0;
@@ -69,6 +69,134 @@ const playbackTasks = (() => {
     const delays = style.transitionDelay.split(',').map(milliseconds);
     return Math.max(0, ...times.map((time, i) => time + delays[i % delays.length]));
   }
+  const backgrounds = ['backdrop', 'nightsky'].map(id => ({
+    element: document.getElementById(id), released: false, phases: [], clock: 0, display: '', restoring: 0,
+  })).filter(item => item.element);
+  let backgroundTime = 0;
+  let backgroundReference = null;
+  let backgroundTimer = null;
+  const wipe = document.getElementById('wipe');
+  const wipeDisplay = wipe?.style.display || '';
+  let wipeTimer = null;
+  let wipeGeneration = 0;
+  function backgroundAnimations(except) {
+    return backgrounds.filter(item => !item.released && item.element !== except)
+      .flatMap(item => item.element.getAnimations({ subtree: true }))
+      .filter(animation => animation.animationName === 'aurora');
+  }
+  function setBackgroundReference(except) {
+    const animation = backgroundAnimations(except)[0];
+    backgroundReference = animation ? { target: animation.effect.target, time: Number(animation.currentTime) } : null;
+  }
+  function backgroundClock() {
+    const animation = backgroundReference && backgroundAnimations()
+      .find(animation => animation.effect.target === backgroundReference.target);
+    if (animation) {
+      const time = Number(animation.currentTime);
+      backgroundTime += Math.max(0, time - backgroundReference.time);
+      backgroundReference.time = time;
+    } else setBackgroundReference();
+    // Follow native CSS progress, including settled/background pauses. A wall
+    // clock can run ahead of WebKit's delivered animation timeline under load.
+    return backgroundTime;
+  }
+  function desiredBackground() { return slides[current].classList.contains('chapter') ? 'nightsky' : 'backdrop'; }
+  function releaseBackground(item) {
+    const root = item.element;
+    if (item.released || root.id === desiredBackground() || getComputedStyle(root).opacity !== '0') return;
+    const children = [...root.querySelectorAll('i')];
+    item.clock = backgroundClock();
+    item.phases = root.getAnimations({ subtree: true }).filter(a => a.animationName === 'aurora')
+      .map(a => ({ index: children.indexOf(a.effect.target), time: Number(a.currentTime) }));
+    if (root.contains(backgroundReference?.target)) setBackgroundReference(root);
+    item.display = root.style.display;
+    root.style.display = 'none';
+    item.released = true;
+  }
+  function restoreBackground(next) {
+    const id = next.classList.contains('chapter') ? 'nightsky' : 'backdrop';
+    const item = backgrounds.find(item => item.element.id === id);
+    if (!item?.released) return;
+    // Apply the next tint before allocating the hidden night background again.
+    if (id === 'nightsky') tintNightSky(next);
+    const elapsed = backgroundClock() - item.clock;
+    item.element.style.display = item.display;
+    const children = [...item.element.querySelectorAll('i')];
+    for (const animation of item.element.getAnimations({ subtree: true })) {
+      const phase = item.phases.find(phase => children[phase.index] === animation.effect.target && animation.animationName === 'aurora');
+      if (phase) animation.currentTime = phase.time + elapsed;
+    }
+    item.restoring = generation;
+    item.released = false;
+  }
+  function finishBackgroundRestores(token) {
+    for (const item of backgrounds.filter(item => item.restoring === token)) {
+      const animations = item.element.getAnimations({ subtree: true }).filter(a => a.animationName === 'aurora');
+      const children = [...item.element.querySelectorAll('i')];
+      // Revived CSS animations can remain pending until their first WebKit
+      // frame. Align after native play readiness, before that frame is painted.
+      Promise.all(animations.map(a => a.ready)).then(() => {
+        if (token !== generation || item.released || item.element.id !== desiredBackground()) return;
+        const elapsed = backgroundClock() - item.clock;
+        for (const animation of animations) {
+          const phase = item.phases.find(phase => children[phase.index] === animation.effect.target);
+          if (phase) animation.currentTime = phase.time + elapsed;
+        }
+        item.phases = []; item.restoring = 0;
+      }, error => { if (error.name !== 'AbortError') throw error; });
+    }
+  }
+  function releaseWipe() {
+    if (!wipe || wipe.style.display === 'none') return;
+    if (wipe.getAnimations().some(a => a.playState === 'running' || a.playState === 'paused')) return;
+    const rect = wipe.getBoundingClientRect(), bounds = stage.getBoundingClientRect();
+    const blur = parseFloat(getComputedStyle(wipe).filter.match(/blur\(([\d.]+)px\)/)?.[1] || '0');
+    const padding = (blur * 4 + 1) * bounds.width / stage.offsetWidth;
+    const outside = rect.right + padding < bounds.left || rect.left - padding > bounds.right
+      || rect.bottom + padding < bounds.top || rect.top - padding > bounds.bottom;
+    if (getComputedStyle(wipe).opacity !== '0' && !outside) return;
+    cancel(wipeTimer); wipeTimer = null;
+    wipe.style.display = 'none';
+    wipe.classList.remove('run');
+  }
+  function prepareGlobals(next, previous) {
+    backgroundClock();
+    restoreBackground(next);
+    const target = backgrounds.find(item => item.element.id === (next.classList.contains('chapter') ? 'nightsky' : 'backdrop'));
+    if (target?.restoring) target.restoring = generation;
+    cancel(backgroundTimer); backgroundTimer = null;
+    if (wipe && next !== previous && next.classList.contains('chapter')) {
+      cancel(wipeTimer); wipeTimer = null; wipeGeneration++;
+      wipe.style.display = wipeDisplay;
+    }
+  }
+  function scheduleGlobals(token) {
+    backgroundClock();
+    const hidden = backgrounds.filter(item => item.element.id !== desiredBackground());
+    for (const item of hidden) releaseBackground(item);
+    if (hidden.some(item => !item.released)) {
+      backgroundTimer = api.delay(null, () => {
+        backgroundTimer = null;
+        if (token === generation) for (const item of hidden) releaseBackground(item);
+      }, Math.max(0, ...hidden.map(item => duration(item.element))) + 34);
+    }
+    releaseWipe();
+    if (wipe && wipe.style.display !== 'none') {
+      const active = wipe.getAnimations().find(a => a.animationName === 'wipe');
+      if (active) {
+        const version = wipeGeneration;
+        cancel(wipeTimer);
+        wipeTimer = api.delay(null, () => { wipeTimer = null; if (version === wipeGeneration) releaseWipe(); },
+          Math.max(0, active.effect.getComputedTiming().endTime - Number(active.currentTime)) + 34);
+      }
+    }
+  }
+  for (const item of backgrounds) item.element.addEventListener('transitionend', event => {
+    if (event.target === item.element && event.propertyName === 'opacity') releaseBackground(item);
+  });
+  wipe?.addEventListener('animationend', event => {
+    if (event.target === wipe && event.animationName === 'wipe') releaseWipe();
+  });
   function releaseExit() {
     cancel(exitTimer); exitTimer = null;
     if (exit && exit !== slides[current]) {
@@ -88,7 +216,9 @@ const playbackTasks = (() => {
     next.classList.add('yuling-enter');
     void next.offsetWidth; // Establish the original pre-entry transition state.
     cancelOwner(next);
+    prepareGlobals(next, previous);
     originalShow(index, revealAll);
+    finishBackgroundRestores(token);
     next.classList.remove('yuling-enter');
     body.classList.add('yuling-playback-ready');
     if (previous !== next) {
@@ -98,12 +228,15 @@ const playbackTasks = (() => {
       exitTimer = api.delay(null, () => { if (token === generation) releaseExit(); }, duration(previous));
     }
     syncParticles();
+    scheduleGlobals(token);
   };
   const originalSettle = scheduleSettle;
   scheduleSettle = slide => {
+    backgroundClock();
     originalSettle(slide);
+    backgroundClock();
     const callback = settleTimer.callback;
-    settleTimer.callback = () => { callback(); syncParticles(); };
+    settleTimer.callback = () => { backgroundClock(); callback(); backgroundClock(); syncParticles(); };
     syncParticles();
   };
   const originalMini = buildMiniSlide;
@@ -195,8 +328,8 @@ const playbackTasks = (() => {
 `;
 
 export const mobilePlaybackCss = String.raw`
-body[data-yuling-playback="lifecycle-v2"] #stage { touch-action:pan-y pinch-zoom; }
-body[data-yuling-playback="lifecycle-v2"].yuling-playback-ready #stage > .slide:not(.active):not(.yuling-exit):not(.yuling-enter) { display:none!important; }
+body[data-yuling-playback="lifecycle-v3"] #stage { touch-action:pan-y pinch-zoom; }
+body[data-yuling-playback="lifecycle-v3"].yuling-playback-ready #stage > .slide:not(.active):not(.yuling-exit):not(.yuling-enter) { display:none!important; }
 `;
 
 export const playbackRewrites: ReadonlyArray<readonly [string, string]> = [

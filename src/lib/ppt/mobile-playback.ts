@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { mobilePlaybackCss, mobilePlaybackRuntime, playbackRewrites } from './mobile-playback-lifecycle';
 import { mobilePlaybackCss as legacyCss, mobilePlaybackRuntime as legacyRuntime } from './mobile-playback-runtime';
+import { mobilePlaybackCss as v2Css, mobilePlaybackRuntime as v2Runtime, playbackRewrites as v2Rewrites } from './mobile-playback-v2';
 
 const runtimeHash = '034a4b48d4c2d7c2852f8488232a68fafc2a21f03ba30eb6038277fad7989624';
 const boot = 'splitHeadingLines();\n(window.componentBootSteps || []).forEach(step => step());';
-const marker = '<!-- yuling-mobile-playback:v2 -->';
-const style = `<style data-yuling-mobile="v2">${mobilePlaybackCss}</style>`;
+const marker = '<!-- yuling-mobile-playback:v3 -->';
+const style = `<style data-yuling-mobile="v3">${mobilePlaybackCss}</style>`;
 const injected = `${marker}\n${mobilePlaybackRuntime}`;
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -14,8 +15,8 @@ export class PlaybackCompatibilityError extends Error {
 }
 
 /** Adapt only the pinned runtime. Stored COS bytes are never changed. */
-function rewrite(html: string, reverse: boolean): string {
-  for (const [original, changed] of playbackRewrites) {
+function rewrite(html: string, reverse: boolean, rewrites = playbackRewrites): string {
+  for (const [original, changed] of rewrites) {
     const from = reverse ? changed : original, to = reverse ? original : changed;
     const count = original === 'requestAnimationFrame(tick);' ? 2 : 1;
     if (html.split(from).length !== count + 1) throw new PlaybackCompatibilityError();
@@ -31,6 +32,12 @@ export function restoreOriginalPlaybackHtml(input: string): string {
   if (marked) {
     if (html.split(marker).length !== 2 || html.split(injected).length !== 2 || html.split(style).length !== 2) throw new PlaybackCompatibilityError();
     original = rewrite(html.replace(injected, '').replace(style, ''), true);
+  } else if (html.includes('<!-- yuling-mobile-playback:v2 -->')) {
+    const oldInjection = '<!-- yuling-mobile-playback:v2 -->\n' + v2Runtime;
+    const oldStyle = '<style data-yuling-mobile="v2">' + v2Css + '</style>';
+    if (html.split('<!-- yuling-mobile-playback:v2 -->').length !== 2
+      || html.split(oldInjection).length !== 2 || html.split(oldStyle).length !== 2) throw new PlaybackCompatibilityError();
+    original = rewrite(html.replace(oldInjection, '').replace(oldStyle, ''), true, v2Rewrites);
   } else if (html.includes('<!-- yuling-mobile-playback:v1 -->')) {
     const oldInjection = '<!-- yuling-mobile-playback:v1 -->\n' + legacyRuntime;
     const oldStyle = '<style data-yuling-mobile="v1">' + legacyCss + '</style>';
